@@ -11,3 +11,9 @@ def srs_forest(core.forest):
 class units:
   def __init__(self):
     pass
+
+  # Method to calculate vacuum wavenumber
+
+  # Method to calculate vacuum frequency
+
+  # Method to calculate critical density

@@ -6,17 +6,34 @@ import astropy.units as u
 # Core class, mainly a wrapper of select plasmapy functionality
 # Take inputs in SI units
 class forest:
+  # Initialise with physical parameters and dimensionality
   def __init__(self,Te,ne,ndim):
     self.Te = Te
     self.ne = ne
     self.ndim = ndim
     self.vthe = None
+    self.ompe = None
+    self.dbyl = None
 
+  # Get electron thermal velocity
   def get_vthe(self):
-    T = self.Te * u.K
-    vthe = pp.formulary.parameters.thermal_speed(T=T,particle='e-',\
+    Te = self.Te * u.K
+    vthe = pp.formulary.parameters.thermal_speed(T=Te,particle='e-',\
         ndim=self.ndim,method='rms')
     self.vthe = vthe.value
+
+  # Get electron plasma frequency
+  def get_ompe(self):
+    ne = self.ne / u.m**3
+    ompe = pp.formulary.parameters.plasma_frequency(n=ne,particle='e-')
+    self.ompe = ompe.value
+
+  # Get Debye length
+  def get_dbyl(self):
+    Te = self.Te * u.K
+    ne = self.ne / u.m**3
+    dbyl = pp.formulary.parameters.Debye_length(T_e=Te,n_e=ne)
+    self.dbyl = dbyl.value
 
 # Function for converting between eV and K using astropy
 def temperature_energy(T,method=None):
