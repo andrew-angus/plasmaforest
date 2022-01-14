@@ -5,7 +5,8 @@ import numpy as np
 import astropy as ap
 
 # Core class, mainly a wrapper of select plasmapy functionality
-class core:
+# Take inputs in SI units
+class forest:
   def __init__(Te,ne):
     pass
 
