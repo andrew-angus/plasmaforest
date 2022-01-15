@@ -34,7 +34,7 @@ mi = 2.5*sc.m_p
 
 # Get forest class instance and assert setup
 birch = forest(Te,ne,ndim,Z,Ti,mi)
-print('Temp {K}: %0.1f; Density {1/m^3}: %0.3e; ndim: %d' \
+print('\nTemp {K}: %0.1f; Density {1/m^3}: %0.3e; ndim: %d' \
     % (birch.Te,birch.ne,birch.ndim))
 necheck = 9.049e26
 Techeck = 3000/8.617333262145e-5
@@ -65,6 +65,12 @@ birch.get_coulomb_log(species='ei')
 cl_check = 7.88
 print('\lambda_{ei}: %0.2f' % (birch.coulomb_log_ei))
 real_assert(birch.coulomb_log_ei,cl_check,1e-2)
+
+# Electron-ion collision frequency
+birch.get_collision_freq(species='ei')
+nu_check = 0.21*1e12
+print('\\nu_{ei}: %0.3e' % (birch.collision_freq_ei))
+real_assert(birch.collision_freq_ei,nu_check,1e11)
 
 # Final statement
 print('All tests in forest_test.py complete.\n')

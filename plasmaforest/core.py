@@ -90,6 +90,27 @@ class forest:
     # Ion-ion
     elif species == 'ii':
       self.coulomb_log_ii = 23-np.log(Z**2/Ti*np.sqrt(2*ni*Z**2/Ti))
+    else:
+      raise Exception(\
+          "Error: species must be one of \'ei\', \'ie\', \'ee\' or \'ii\'")
+
+  # Calculate collision frequency according to NRL formulary
+  def get_collision_freq(self,species):
+    """
+    ne = (self.ne/u.m**3).cgs.value
+    Ti = temperature_energy(self.Ti,method='KtoeV')
+    me = (sc.m_e*u.kg).cgs.value 
+    mi = (self.mi*u.kg).cgs.value 
+    mui = self.mi/sc.m_p
+    """
+    if species == 'ei':
+      ni = (self.ni/u.m**3).cgs.value
+      Te = temperature_energy(self.Te,method='KtoeV')
+      Z = self.Z
+      if self.coulomb_log_ei is None:
+        self.get_coulomb_log(species='ei')
+      self.collision_freq_ei = 3.9e-6*np.power(Te,-3/2)*ni*Z**2\
+          *self.coulomb_log_ei 
 
   def _exist(self,var,varname):
     if var is None:
