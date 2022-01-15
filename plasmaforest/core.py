@@ -67,14 +67,14 @@ class forest:
       # Selective quantities
       ne,Te,Ti,me,mi,mui,ni = nrl
       Ti_mr = Ti*me/mi
-      Zscaled = 10*self.Z**2
+      Zscaled = 10*np.power(self.Z,2)
       # Evaluation cases
       if Ti_mr < Te and Te < Zscaled:
         cl = 23-np.log(np.sqrt(ne)*self.Z*np.power(Te,-3/2))
       elif Ti_mr < Zscaled and Zscaled < Te:
         cl = 24-np.log(np.sqrt(ne)/Te)
       elif Te < Ti_mr:
-        cl = 16-np.log(np.sqrt(ni)*np.power(Ti,-3/2)*self.Z**2*mui)
+        cl = 16-np.log(np.sqrt(ni)*np.power(Ti,-3/2)*np.power(self.Z,2)*mui)
       else:
         raise Exception(\
             "Error: coulomb_log_ei calc does not fit any NRL formulary cases") 
@@ -83,11 +83,12 @@ class forest:
     elif species == 'ee':
       ne,Te = nrl
       self.coulomb_log_ee = 23.5-np.log(np.sqrt(ne)*np.power(Te,-5/4))\
-          -np.sqrt(1e-5+(np.log(Te)-2)**2/16)
+          -np.sqrt(1e-5+np.power(np.log(Te)-2,2)/16)
     # Ion-ion
     elif species == 'ii':
       ne,Te,Ti,me,mi,mui,ni = nrl
-      self.coulomb_log_ii = 23-np.log(self.Z**2/Ti*np.sqrt(2*ni*self.Z**2/Ti))
+      self.coulomb_log_ii = 23-np.log(np.power(self.Z,3)/np.power(Ti,3/2)\
+          *np.sqrt(2*ni))
     else:
       raise Exception(\
           "Error: species must be one of \'ei\', \'ie\', \'ee\' or \'ii\'")
@@ -106,7 +107,7 @@ class forest:
       ne,Te,Ti,me,mi,mui,ni = nrl
       if self.coulomb_log_ei is None:
         self.get_coulomb_log(species='ei')
-      self.collision_freq_ei = 3.9e-6*np.power(Te,-3/2)*ni*self.Z**2\
+      self.collision_freq_ei = 3.9e-6*np.power(Te,-3/2)*ni*np.power(self.Z,2)\
           *self.coulomb_log_ei 
     elif species == 'ee':
       ne,Te = nrl
@@ -118,15 +119,14 @@ class forest:
       ne,Te,Ti,me,mi,mui,ni = nrl
       if self.coulomb_log_ei is None:
         self.get_coulomb_log(species='ei')
-      self.collision_freq_ei = 1.6e-9/mui*np.power(Te,-3/2)*ne*self.Z**2\
-          *self.coulomb_log_ei 
+      self.collision_freq_ei = 1.6e-9/mui*np.power(Te,-3/2)*ne\
+          *np.power(self.Z,2)*self.coulomb_log_ei 
     elif species == 'ii':
       ne,Te,Ti,me,mi,mui,ni = nrl
       if self.coulomb_log_ii is None:
         self.get_coulomb_log(species='ii')
       self.collision_freq_ii = 6.8e-8/np.sqrt(mui)*2*np.power(Ti,-3/2)\
-          *ni*self.Z**4*self.coulomb_log_ii 
-
+          *ni*np.power(self.Z,4)*self.coulomb_log_ii 
 
   # Check attribute exists, with error raising
   def _exist(self,var,varname):

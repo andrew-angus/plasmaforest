@@ -74,3 +74,7 @@ real_assert(birch.collision_freq_ei,nu_check,1e11)
 
 # Final statement
 print('All tests in forest_test.py complete.\n')
+
+## Funcions still not validated:
+# birch.get_coulomb_log(species=['ee','ii'])
+# birch.get_collision_freq(species=['ee','ii'])
