@@ -24,6 +24,10 @@ class forest:
     self.coulomb_log_ei = None
     self.coulomb_log_ee = None
     self.coulomb_log_ii = None
+    self.collision_freq_ei = None
+    self.collision_freq_ee = None
+    self.collision_freq_ie = None
+    self.collision_freq_ii = None
     if Z is not None:
       self.ni = ne/Z # Quasi-neutrality
 
@@ -51,70 +55,104 @@ class forest:
   # Calculated using NRL formulary (which uses cgs units)
   def get_coulomb_log(self,species):
     # Check ion parameters specified
-    self._exist(self.Z,'self.Z')
-    self._exist(self.Ti,'self.Ti')
-    self._exist(self.mi,'self.mi')
-    self._exist(self.ni,'self.ni')
+    if species in ['ei','ie','ii']:
+      self._ion_check()
 
     # Get everything in cgs units, eV for temperatures
-    ne = (self.ne/u.m**3).cgs.value
-    ni = (self.ni/u.m**3).cgs.value
-    Te = temperature_energy(self.Te,method='KtoeV')
-    Ti = temperature_energy(self.Ti,method='KtoeV')
-    me = (sc.m_e*u.kg).cgs.value 
-    mi = (self.mi*u.kg).cgs.value 
-    mui = self.mi/sc.m_p
-    Z = self.Z
+    nrl = self._nrl_collisions(species)
 
     ## Coulomb log calcs for different species
     # Electron-ion 
     if species == 'ei' or species == 'ie':
       # Selective quantities
+      ne,Te,Ti,me,mi,mui,ni = nrl
       Ti_mr = Ti*me/mi
-      Zscaled = 10*Z**2
+      Zscaled = 10*self.Z**2
       # Evaluation cases
       if Ti_mr < Te and Te < Zscaled:
-        cl = 23-np.log(np.sqrt(ne)*Z*np.power(Te,-3/2))
+        cl = 23-np.log(np.sqrt(ne)*self.Z*np.power(Te,-3/2))
       elif Ti_mr < Zscaled and Zscaled < Te:
         cl = 24-np.log(np.sqrt(ne)/Te)
       elif Te < Ti_mr:
-        cl = 16-np.log(np.sqrt(ni)*np.power(Ti,-3/2)*Z**2*mui)
+        cl = 16-np.log(np.sqrt(ni)*np.power(Ti,-3/2)*self.Z**2*mui)
       else:
         raise Exception(\
             "Error: coulomb_log_ei calc does not fit any NRL formulary cases") 
       self.coulomb_log_ei = cl
     # Electron-electron
     elif species == 'ee':
+      ne,Te = nrl
       self.coulomb_log_ee = 23.5-np.log(np.sqrt(ne)*np.power(Te,-5/4))\
           -np.sqrt(1e-5+(np.log(Te)-2)**2/16)
     # Ion-ion
     elif species == 'ii':
-      self.coulomb_log_ii = 23-np.log(Z**2/Ti*np.sqrt(2*ni*Z**2/Ti))
+      ne,Te,Ti,me,mi,mui,ni = nrl
+      self.coulomb_log_ii = 23-np.log(self.Z**2/Ti*np.sqrt(2*ni*self.Z**2/Ti))
     else:
       raise Exception(\
           "Error: species must be one of \'ei\', \'ie\', \'ee\' or \'ii\'")
 
   # Calculate collision frequency according to NRL formulary
   def get_collision_freq(self,species):
-    """
-    ne = (self.ne/u.m**3).cgs.value
-    Ti = temperature_energy(self.Ti,method='KtoeV')
-    me = (sc.m_e*u.kg).cgs.value 
-    mi = (self.mi*u.kg).cgs.value 
-    mui = self.mi/sc.m_p
-    """
+    # Check ion parameters specified if required
+    if species in ['ei','ie','ii']:
+      self._ion_check()
+
+    # Get everything in cgs units, eV for temperatures
+    nrl = self._nrl_collisions(species)
+
+    # Calculate collision frequencies for each species pair
     if species == 'ei':
-      ni = (self.ni/u.m**3).cgs.value
-      Te = temperature_energy(self.Te,method='KtoeV')
-      Z = self.Z
+      ne,Te,Ti,me,mi,mui,ni = nrl
       if self.coulomb_log_ei is None:
         self.get_coulomb_log(species='ei')
-      self.collision_freq_ei = 3.9e-6*np.power(Te,-3/2)*ni*Z**2\
+      self.collision_freq_ei = 3.9e-6*np.power(Te,-3/2)*ni*self.Z**2\
           *self.coulomb_log_ei 
+    elif species == 'ee':
+      ne,Te = nrl
+      if self.coulomb_log_ee is None:
+        self.get_coulomb_log(species='ee')
+      self.collision_freq_ee = 7.7e-6*np.power(Te,-3/2)*ne\
+          *self.coulomb_log_ee 
+    elif species == 'ie':
+      ne,Te,Ti,me,mi,mui,ni = nrl
+      if self.coulomb_log_ei is None:
+        self.get_coulomb_log(species='ei')
+      self.collision_freq_ei = 1.6e-9/mui*np.power(Te,-3/2)*ne*self.Z**2\
+          *self.coulomb_log_ei 
+    elif species == 'ii':
+      ne,Te,Ti,me,mi,mui,ni = nrl
+      if self.coulomb_log_ii is None:
+        self.get_coulomb_log(species='ii')
+      self.collision_freq_ii = 6.8e-8/np.sqrt(mui)*2*np.power(Ti,-3/2)\
+          *ni*self.Z**4*self.coulomb_log_ii 
 
+
+  # Check attribute exists, with error raising
   def _exist(self,var,varname):
     if var is None:
       raise Exception(f"Error: must set {varname}")
+
+  # Check ion parameters specified
+  def _ion_check(self):
+    self._exist(self.Z,'self.Z')
+    self._exist(self.Ti,'self.Ti')
+    self._exist(self.mi,'self.mi')
+    self._exist(self.ni,'self.ni')
+
+  # Return NRL formulary units for collision quantity calcs
+  def _nrl_collisions(self,species):
+    ne = (self.ne/u.m**3).cgs.value
+    Te = temperature_energy(self.Te,method='KtoeV')
+    if species in ['ei','ie','ii']:
+      Ti = temperature_energy(self.Ti,method='KtoeV')
+      me = (sc.m_e*u.kg).cgs.value 
+      mi = (self.mi*u.kg).cgs.value 
+      mui = self.mi/sc.m_p
+      ni = (self.ni/u.m**3).cgs.value
+      return ne,Te,Ti,me,mi,mui,ni
+    else:
+      return ne,Te
 
 # Function for converting between eV and K using astropy
 def temperature_energy(T,method):
