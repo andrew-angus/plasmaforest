@@ -78,25 +78,28 @@ class forest:
 
     # Get everything in cgs units, eV for temperatures
     nrl = self._nrl_collisions(species)
+    Z = self.Z
 
     ## Coulomb log calcs for different species
     # Electron-ion 
     if species == 'ei' or species == 'ie':
       # Selective quantities
       ne,Te,Ti,me,mi,mui,ni = nrl
-      #if self.nion
-      Ti_mr = Ti*me/mi
-      Zscaled = 10*np.power(self.Z,2)
-      # Evaluation cases
-      if Ti_mr < Te and Te < Zscaled:
-        cl = 23-np.log(np.sqrt(ne)*self.Z*np.power(Te,-3/2))
-      elif Ti_mr < Zscaled and Zscaled < Te:
-        cl = 24-np.log(np.sqrt(ne)/Te)
-      elif Te < Ti_mr:
-        cl = 16-np.log(np.sqrt(ni)*np.power(Ti,-3/2)*np.power(self.Z,2)*mui)
-      else:
-        raise Exception(\
-            "Error: coulomb_log_ei calc does not fit any NRL formulary cases") 
+      cl = np.zeros(self.nion)
+      for i in range(self.nion):
+        Ti_mr = Ti[i]*me/mi[i]
+        Zscaled = 10*np.power(Z[i],2)
+        # Evaluation cases
+        if Ti_mr < Te and Te < Zscaled:
+          cl[i] = 23-np.log(np.sqrt(ne)*Z[i]*np.power(Te,-3/2))
+        elif Ti_mr < Zscaled and Zscaled < Te:
+          cl[i] = 24-np.log(np.sqrt(ne)/Te)
+        elif Te < Ti_mr:
+          cl[i] = 16-np.log(np.sqrt(ni[i])*np.power(Ti[i],-3/2)\
+              *np.power(Z[i],2)*mui[i])
+        else:
+          raise Exception(\
+              "Error: coulomb_log_ei calc does not fit any NRL formulary cases") 
       self.coulomb_log_ei = cl
     # Electron-electron
     elif species == 'ee':
@@ -112,21 +115,6 @@ class forest:
       raise Exception(\
           "Error: species must be one of \'ei\', \'ie\', \'ee\' or \'ii\'")
 
-  def _cl_ei(self,Te,Ti,ne,ni,me,mi,Z):
-    Ti_mr = Ti*me/mi
-    Zscaled = 10*np.power(Z,2)
-    # Evaluation cases
-    if Ti_mr < Te and Te < Zscaled:
-      cl = 23-np.log(np.sqrt(ne)*self.Z*np.power(Te,-3/2))
-    elif Ti_mr < Zscaled and Zscaled < Te:
-      cl = 24-np.log(np.sqrt(ne)/Te)
-    elif Te < Ti_mr:
-      cl = 16-np.log(np.sqrt(ni)*np.power(Ti,-3/2)*np.power(Z,2)*mui)
-    else:
-      raise Exception(\
-          "Error: coulomb_log_ei calc does not fit any NRL formulary cases") 
-    return cl
-
   # Calculate collision frequency according to NRL formulary
   def get_collision_freq(self,species):
     # Check ion parameters specified if required
@@ -137,6 +125,7 @@ class forest:
 
     # Get everything in cgs units, eV for temperatures
     nrl = self._nrl_collisions(species)
+    Z = self.Z
 
     # Calculate collision frequencies for each species pair
     if species == 'ei':

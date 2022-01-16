@@ -28,17 +28,18 @@ nc = sc.epsilon_0*sc.m_e/sc.e**2*laser_omega**2 # m/s
 ne = 0.1*nc # plasma at 0.1 nc
 TeeV = 3000 # eV
 Te = temperature_energy(TeeV,'eVtoK')
-nion = 1
-Ti = np.array([Te/3])
-Z = np.array([1.5])
-mi = np.array([2.5*sc.m_p])
-ni = ne/Z
-#Z = np.array([1,2,3])
-#mi = np.array([1,4])*sc.m_p
-#ni = np.ones(2)/3
+#nion = 1
+#Z = np.array([1.5])
+#mi = np.array([2.5*sc.m_p])
+nion = 2
+Z = np.array([1,2])
+mi = np.array([1,4])*sc.m_p
+Ti = np.ones(nion)*Te/3
+ni = np.ones(nion)*ne/3
 
 # Get forest class instance and assert setup
 birch = forest(Te=Te,ne=ne,ndim=ndim,nion=nion,Z=Z,Ti=Ti,ni=ni,mi=mi)
+print(birch.ni)
 print('\nTemp {K}: %0.1f; Density {1/m^3}: %0.3e; ndim: %d' \
     % (birch.Te,birch.ne,birch.ndim))
 necheck = 9.049e26
@@ -68,14 +69,18 @@ real_assert(birch.dbyl,dbyl_check,1e-11)
 # Coulomb logarithm
 birch.get_coulomb_log(species='ei')
 cl_check = 7.88
-print('\lambda_{ei}: %0.2f' % (birch.coulomb_log_ei))
-real_assert(birch.coulomb_log_ei,cl_check,1e-2)
+np.set_printoptions(precision=3)
+print('\lambda_{ei}:',birch.coulomb_log_ei)
+real_assert(birch.coulomb_log_ei[0],cl_check,1e-2)
+print(birch.ni)
 
 # Electron-ion collision frequency
 birch.get_collision_freq(species='ei')
 nu_check = 0.21*1e12
-print('\\nu_{ei}: %0.3e' % (birch.collision_freq_ei))
-real_assert(birch.collision_freq_ei,nu_check,1e11)
+print('\\nu_{ei}:',birch.collision_freq_ei)
+nu_tot = np.sum(birch.collision_freq_ei)
+print('\\nu_{ei,tot}: %0.3e' % (nu_tot))
+real_assert(nu_tot,nu_check,1e11)
 
 # Final statement
 print('All tests in forest_test.py complete.\n')
