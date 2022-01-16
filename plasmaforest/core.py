@@ -77,7 +77,7 @@ class forest:
       return
 
     # Get everything in cgs units, eV for temperatures
-    nrl = self._nrl_collisions(species)
+    nrl = self.__nrl_collisions(species)
     Z = self.Z
 
     ## Coulomb log calcs for different species
@@ -109,11 +109,30 @@ class forest:
     # Ion-ion
     elif species == 'ii':
       ne,Te,Ti,me,mi,mui,ni = nrl
-      self.coulomb_log_ii = 23-np.log(np.power(self.Z,3)/np.power(Ti,3/2)\
-          *np.sqrt(2*ni))
+      uniques = self.nion*(self.nion+1)//2
+      self.coulomb_log_ii = np.zeros(uniques)
+      for i in range(self.nion):
+        for j in range(i+1):
+          print(i,j)
+          vid = _sym_mtx_to_vec(i,j,self.nion) 
+          print(vid)
+          #self.coulomb_log_ii = 23-np.log(np.power(self.Z,3)/np.power(Ti,3/2)\
+          #    *np.sqrt(2*ni))
+          self.coulomb_log_ii[vid] = 23-np.log(Z[i]*Z[j]*(mui[i]+mui[j])\
+              /(mui[i]*Ti[j]+mui[j]*Ti[i])*np.sqrt(ni[i]*np.power(Z[i],2)\
+              /Ti[i]+ni[j]*np.power(Z[j],2)/Ti[j]))
+      test = np.zeros((self.nion,self.nion))
+      for i in range(uniques):
+        print(i)
+        row,col = _vec_to_sym_mtx(i,self.nion)
+        print(row,col)
+        test[row,col] = self.coulomb_log_ii[i]
+        test[col,row] = self.coulomb_log_ii[i]
+      print(test)
     else:
       raise Exception(\
           "Error: species must be one of \'ei\', \'ie\', \'ee\' or \'ii\'")
+
 
   # Calculate collision frequency according to NRL formulary
   def get_collision_freq(self,species):
@@ -124,7 +143,7 @@ class forest:
       return
 
     # Get everything in cgs units, eV for temperatures
-    nrl = self._nrl_collisions(species)
+    nrl = self.__nrl_collisions(species)
     Z = self.Z
 
     # Calculate collision frequencies for each species pair
@@ -154,7 +173,7 @@ class forest:
           *ni*np.power(self.Z,4)*self.coulomb_log_ii 
 
   # Return NRL formulary units for collision quantity calcs
-  def _nrl_collisions(self,species):
+  def __nrl_collisions(self,species):
     ne = (self.ne/u.m**3).cgs.value
     Te = temperature_energy(self.Te,method='KtoeV')
     if species in ['ei','ie','ii']:
@@ -185,3 +204,22 @@ def temperature_energy(T,method):
 def real_assert(val,valcheck,diff):
   assert(val > valcheck - diff)
   assert(val < valcheck + diff)
+
+# Symmetric matrix entry represented by unique entry in 1D vector
+# This routine returns the vector id for 2D index arguments
+def _sym_mtx_to_vec(i,j,n):
+  if i <= j:
+    return i*n-(i-1)*i//2+j-i;
+  else:
+    return j*n-(j-1)*j//2+i-j;
+
+# Reverse to go from vector to symmetric matrix
+def _vec_to_sym_mtx(i,n):
+  row = 0
+  keyafter = -1
+  while i >= keyafter:
+    row += 1
+    keyafter = row*n-(row-1)*row//2
+  row -= 1
+  col = n-keyafter+i
+  return row,col
