@@ -15,31 +15,37 @@ class forest:
     self.Te = Te # Electron temperature
     self.ne = ne # Electron density
     self.ndim = ndim # Plasma dimensionality
+    self.vthe = None # Electron thermal velocity
+    self.ompe = None # Electron plasma frequency
+    self.dbyl = None # Debye length
+    self.coulomb_log_ee = None # Electron-electron coulomb log
+    self.collision_freq_ee = None # Electron-electron collision frequency
+    self.set_ions(nion=nion,Ti=Ti,ni=ni,Z=Z,mi=mi)
+
+  def set_ions(self,nion,Ti=None,ni=None,Z=None,mi=None):
     self.nion = nion # Number of ion species
     self.Z = Z # Ion charge states
     self.Ti = Ti # Ion temperatures
     self.ni = ni # Ion densities
     self.mi = mi # Ion masses
-    self.vthe = None # Electron thermal velocity
-    self.ompe = None # Electron plasma frequency
-    self.dbyl = None # Debye length
     self.coulomb_log_ei = None # Electron-ion coulomb logs
-    self.coulomb_log_ee = None # Electron-electron coulomb log
     self.coulomb_log_ii = None # Ion-ion coulomb logs
     self.collision_freq_ei = None # Electron-ion collision frequencies
-    self.collision_freq_ee = None # Electron-electron collision frequency
     self.collision_freq_ie = None # Ion-electron collision frequencies
     self.collision_freq_ii = None # Ion-ion collision frequencies
 
     # Check nion > 0
-    if nion < 0:
-      raise Exception("nion parameter must be > 0")
+    if nion < 0 or not isinstance(nion,int):
+      raise Exception("nion parameter must be integer >= 0")
 
-    # Check length of ion arrays match nion
-    if nion > 0:
-      for i in [Z,Ti,ni,mi]:
-        if not isinstance(i,np.ndarray) or len(i) != nion:
-          raise Exception("Ion parameters must be numpy arrays of length nion")
+    # Check ion parameter specification
+    for i in [Z,Ti,ni,mi]:
+      if i is None and nion > 0:
+        raise Exception("nion > 0 but not all ion parameters specified")
+      elif i is not None and nion == 0:
+        raise Exception("nion = 0 but ion parameters specified")
+      elif nion > 0 and (not isinstance(i,np.ndarray) or len(i) != nion):
+        raise Exception("Ion parameters must be numpy arrays of length nion")
 
   # Get electron thermal velocity
   def get_vthe(self):
@@ -65,8 +71,10 @@ class forest:
   # Calculated using NRL formulary (which uses cgs units)
   def get_coulomb_log(self,species):
     # Check ion parameters specified
-    if species in ['ei','ie','ii']:
-      self._ion_check()
+    if species in ['ei','ie','ii'] and self.nion == 0:
+      print('Warning: no ion parameters specified to '\
+          + 'calculate ion coulomb logarithm, use set_ions method.')
+      return
 
     # Get everything in cgs units, eV for temperatures
     nrl = self._nrl_collisions(species)
@@ -122,8 +130,10 @@ class forest:
   # Calculate collision frequency according to NRL formulary
   def get_collision_freq(self,species):
     # Check ion parameters specified if required
-    if species in ['ei','ie','ii']:
-      self._ion_check()
+    if species in ['ei','ie','ii'] and self.nion == 0:
+      print('Warning: no ion parameters specified to '\
+          + 'calculate ion collision frequency, use set_ions method.')
+      return
 
     # Get everything in cgs units, eV for temperatures
     nrl = self._nrl_collisions(species)
@@ -153,18 +163,6 @@ class forest:
         self.get_coulomb_log(species='ii')
       self.collision_freq_ii = 6.8e-8/np.sqrt(mui)*2*np.power(Ti,-3/2)\
           *ni*np.power(self.Z,4)*self.coulomb_log_ii 
-
-  # Check attribute exists, with error raising
-  def _exist(self,var,varname):
-    if var is None:
-      raise Exception(f"Error: must set {varname}")
-
-  # Check ion parameters specified
-  def _ion_check(self):
-    self._exist(self.Z,'self.Z')
-    self._exist(self.Ti,'self.Ti')
-    self._exist(self.mi,'self.mi')
-    self._exist(self.ni,'self.ni')
 
   # Return NRL formulary units for collision quantity calcs
   def _nrl_collisions(self,species):
