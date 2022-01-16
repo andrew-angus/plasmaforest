@@ -28,12 +28,17 @@ nc = sc.epsilon_0*sc.m_e/sc.e**2*laser_omega**2 # m/s
 ne = 0.1*nc # plasma at 0.1 nc
 TeeV = 3000 # eV
 Te = temperature_energy(TeeV,'eVtoK')
-Z = 1.5
-Ti = Te/3
-mi = 2.5*sc.m_p
+nion = 1
+Ti = np.array([Te/3])
+Z = np.array([1.5])
+mi = np.array([2.5*sc.m_p])
+ni = ne/Z
+#Z = np.array([1,2,3])
+#mi = np.array([1,4])*sc.m_p
+#ni = np.ones(2)/3
 
 # Get forest class instance and assert setup
-birch = forest(Te,ne,ndim,Z,Ti,mi)
+birch = forest(Te=Te,ne=ne,ndim=ndim,nion=nion,Z=Z,Ti=Ti,ni=ni,mi=mi)
 print('\nTemp {K}: %0.1f; Density {1/m^3}: %0.3e; ndim: %d' \
     % (birch.Te,birch.ne,birch.ndim))
 necheck = 9.049e26

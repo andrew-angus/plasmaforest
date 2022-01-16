@@ -11,25 +11,35 @@ import numpy as np
 # Take inputs in SI units
 class forest:
   # Initialise with physical parameters and dimensionality
-  def __init__(self,Te,ne,ndim,Z=None,Ti=None,mi=None):
-    self.Te = Te
-    self.ne = ne
-    self.ndim = ndim
-    self.Z = Z
-    self.Ti = Ti
-    self.mi = mi
-    self.vthe = None
-    self.ompe = None
-    self.dbyl = None
-    self.coulomb_log_ei = None
-    self.coulomb_log_ee = None
-    self.coulomb_log_ii = None
-    self.collision_freq_ei = None
-    self.collision_freq_ee = None
-    self.collision_freq_ie = None
-    self.collision_freq_ii = None
-    if Z is not None:
-      self.ni = ne/Z # Quasi-neutrality
+  def __init__(self,Te,ne,ndim,nion,Ti=None,ni=None,Z=None,mi=None):
+    self.Te = Te # Electron temperature
+    self.ne = ne # Electron density
+    self.ndim = ndim # Plasma dimensionality
+    self.nion = nion # Number of ion species
+    self.Z = Z # Ion charge states
+    self.Ti = Ti # Ion temperatures
+    self.ni = ni # Ion densities
+    self.mi = mi # Ion masses
+    self.vthe = None # Electron thermal velocity
+    self.ompe = None # Electron plasma frequency
+    self.dbyl = None # Debye length
+    self.coulomb_log_ei = None # Electron-ion coulomb logs
+    self.coulomb_log_ee = None # Electron-electron coulomb log
+    self.coulomb_log_ii = None # Ion-ion coulomb logs
+    self.collision_freq_ei = None # Electron-ion collision frequencies
+    self.collision_freq_ee = None # Electron-electron collision frequency
+    self.collision_freq_ie = None # Ion-electron collision frequencies
+    self.collision_freq_ii = None # Ion-ion collision frequencies
+
+    # Check nion > 0
+    if nion < 0:
+      raise Exception("nion parameter must be > 0")
+
+    # Check length of ion arrays match nion
+    if nion > 0:
+      for i in [Z,Ti,ni,mi]:
+        if not isinstance(i,np.ndarray) or len(i) != nion:
+          raise Exception("Ion parameters must be numpy arrays of length nion")
 
   # Get electron thermal velocity
   def get_vthe(self):
@@ -66,6 +76,7 @@ class forest:
     if species == 'ei' or species == 'ie':
       # Selective quantities
       ne,Te,Ti,me,mi,mui,ni = nrl
+      #if self.nion
       Ti_mr = Ti*me/mi
       Zscaled = 10*np.power(self.Z,2)
       # Evaluation cases
@@ -92,6 +103,21 @@ class forest:
     else:
       raise Exception(\
           "Error: species must be one of \'ei\', \'ie\', \'ee\' or \'ii\'")
+
+  def _cl_ei(self,Te,Ti,ne,ni,me,mi,Z):
+    Ti_mr = Ti*me/mi
+    Zscaled = 10*np.power(Z,2)
+    # Evaluation cases
+    if Ti_mr < Te and Te < Zscaled:
+      cl = 23-np.log(np.sqrt(ne)*self.Z*np.power(Te,-3/2))
+    elif Ti_mr < Zscaled and Zscaled < Te:
+      cl = 24-np.log(np.sqrt(ne)/Te)
+    elif Te < Ti_mr:
+      cl = 16-np.log(np.sqrt(ni)*np.power(Ti,-3/2)*np.power(Z,2)*mui)
+    else:
+      raise Exception(\
+          "Error: coulomb_log_ei calc does not fit any NRL formulary cases") 
+    return cl
 
   # Calculate collision frequency according to NRL formulary
   def get_collision_freq(self,species):
