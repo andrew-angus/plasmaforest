@@ -12,7 +12,6 @@ import scipy.constants as sc
 from numpy import pi
 import numpy as np
 import astropy.units as u
-from plasmapy.formulary.collisions import Coulomb_logarithm
 from plasmapy.utils.exceptions import RelativityWarning
 import warnings
 
@@ -28,14 +27,25 @@ nc = sc.epsilon_0*sc.m_e/sc.e**2*laser_omega**2 # m/s
 ne = 0.1*nc # plasma at 0.1 nc
 TeeV = 3000 # eV
 Te = temperature_energy(TeeV,'eVtoK')
-Z = 1.5
-Ti = Te/3
-mi = 2.5*sc.m_p
+#nion = 1
+#Z = np.array([1.5])
+#mi = np.array([2.5*sc.m_p])
+nion = 2
+Z = np.array([1,2])
+mi = np.array([1,4])*sc.m_p
+Ti = np.ones(nion)*Te/3
+ni = np.ones(nion)*ne/3
+np.set_printoptions(precision=3)
 
 # Get forest class instance and assert setup
-birch = forest(Te,ne,ndim,Z,Ti,mi)
-print('\nTemp {K}: %0.1f; Density {1/m^3}: %0.3e; ndim: %d' \
+birch = forest(Te=Te,ne=ne,ndim=ndim,nion=nion,Z=Z,Ti=Ti,ni=ni,mi=mi)
+print('\nTe {K}: %0.1f; ne {1/m^3}: %0.3e; ndim: %d' \
     % (birch.Te,birch.ne,birch.ndim))
+print('Ti {K}: %0.1f; nion: %d' \
+    % (birch.Ti[0],birch.nion))
+print('Ions: [H,He]; Z:',Z)
+print('ni {1/m^3}:',ni,'; mi {kg}:',mi)
+
 necheck = 9.049e26
 Techeck = 3000/8.617333262145e-5
 real_assert(birch.ne,necheck,1e23)
@@ -63,18 +73,20 @@ real_assert(birch.dbyl,dbyl_check,1e-11)
 # Coulomb logarithm
 birch.get_coulomb_log(species='ei')
 cl_check = 7.88
-print('\lambda_{ei}: %0.2f' % (birch.coulomb_log_ei))
-real_assert(birch.coulomb_log_ei,cl_check,1e-2)
+print('\lambda_{ei}:',birch.coulomb_log_ei)
+real_assert(birch.coulomb_log_ei[0],cl_check,1e-2)
 
 # Electron-ion collision frequency
 birch.get_collision_freq(species='ei')
 nu_check = 0.21*1e12
-print('\\nu_{ei}: %0.3e' % (birch.collision_freq_ei))
-real_assert(birch.collision_freq_ei,nu_check,1e11)
+print('\\nu_{ei}:',birch.collision_freq_ei)
+nu_tot = np.sum(birch.collision_freq_ei)
+print('\\nu_{ei,tot}: %0.3e' % (nu_tot))
+real_assert(nu_tot,nu_check,1e11)
 
 # Final statement
 print('All tests in forest_test.py complete.\n')
 
-## Funcions still not validated:
+## Funcions still not validated againtst known answers:
 # birch.get_coulomb_log(species=['ee','ii'])
 # birch.get_collision_freq(species=['ee','ii'])
