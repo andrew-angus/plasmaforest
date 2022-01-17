@@ -12,7 +12,6 @@ import scipy.constants as sc
 from numpy import pi
 import numpy as np
 import astropy.units as u
-from plasmapy.formulary.collisions import Coulomb_logarithm
 from plasmapy.utils.exceptions import RelativityWarning
 import warnings
 
@@ -36,11 +35,17 @@ Z = np.array([1,2])
 mi = np.array([1,4])*sc.m_p
 Ti = np.ones(nion)*Te/3
 ni = np.ones(nion)*ne/3
+np.set_printoptions(precision=3)
 
 # Get forest class instance and assert setup
 birch = forest(Te=Te,ne=ne,ndim=ndim,nion=nion,Z=Z,Ti=Ti,ni=ni,mi=mi)
-print('\nTemp {K}: %0.1f; Density {1/m^3}: %0.3e; ndim: %d' \
+print('\nTe {K}: %0.1f; ne {1/m^3}: %0.3e; ndim: %d' \
     % (birch.Te,birch.ne,birch.ndim))
+print('Ti {K}: %0.1f; nion: %d' \
+    % (birch.Ti[0],birch.nion))
+print('Ions: [H,He]; Z:',Z)
+print('ni {1/m^3}:',ni,'; mi {kg}:',mi)
+
 necheck = 9.049e26
 Techeck = 3000/8.617333262145e-5
 real_assert(birch.ne,necheck,1e23)
@@ -68,7 +73,6 @@ real_assert(birch.dbyl,dbyl_check,1e-11)
 # Coulomb logarithm
 birch.get_coulomb_log(species='ei')
 cl_check = 7.88
-np.set_printoptions(precision=3)
 print('\lambda_{ei}:',birch.coulomb_log_ei)
 real_assert(birch.coulomb_log_ei[0],cl_check,1e-2)
 
@@ -80,12 +84,9 @@ nu_tot = np.sum(birch.collision_freq_ei)
 print('\\nu_{ei,tot}: %0.3e' % (nu_tot))
 real_assert(nu_tot,nu_check,1e11)
 
-birch.get_coulomb_log(species='ii')
-print(birch.coulomb_log_ii)
-
 # Final statement
 print('All tests in forest_test.py complete.\n')
 
-## Funcions still not validated:
+## Funcions still not validated againtst known answers:
 # birch.get_coulomb_log(species=['ee','ii'])
 # birch.get_collision_freq(species=['ee','ii'])

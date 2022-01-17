@@ -113,22 +113,10 @@ class forest:
       self.coulomb_log_ii = np.zeros(uniques)
       for i in range(self.nion):
         for j in range(i+1):
-          print(i,j)
           vid = _sym_mtx_to_vec(i,j,self.nion) 
-          print(vid)
-          #self.coulomb_log_ii = 23-np.log(np.power(self.Z,3)/np.power(Ti,3/2)\
-          #    *np.sqrt(2*ni))
           self.coulomb_log_ii[vid] = 23-np.log(Z[i]*Z[j]*(mui[i]+mui[j])\
               /(mui[i]*Ti[j]+mui[j]*Ti[i])*np.sqrt(ni[i]*np.power(Z[i],2)\
               /Ti[i]+ni[j]*np.power(Z[j],2)/Ti[j]))
-      test = np.zeros((self.nion,self.nion))
-      for i in range(uniques):
-        print(i)
-        row,col = _vec_to_sym_mtx(i,self.nion)
-        print(row,col)
-        test[row,col] = self.coulomb_log_ii[i]
-        test[col,row] = self.coulomb_log_ii[i]
-      print(test)
     else:
       raise Exception(\
           "Error: species must be one of \'ei\', \'ie\', \'ee\' or \'ii\'")
@@ -163,14 +151,19 @@ class forest:
       ne,Te,Ti,me,mi,mui,ni = nrl
       if self.coulomb_log_ei is None:
         self.get_coulomb_log(species='ei')
-      self.collision_freq_ei = 1.6e-9/mui*np.power(Te,-3/2)*ne\
+      self.collision_freq_ie = 1.6e-9/mui*np.power(Te,-3/2)*ne\
           *np.power(self.Z,2)*self.coulomb_log_ei 
     elif species == 'ii':
       ne,Te,Ti,me,mi,mui,ni = nrl
       if self.coulomb_log_ii is None:
         self.get_coulomb_log(species='ii')
-      self.collision_freq_ii = 6.8e-8/np.sqrt(mui)*2*np.power(Ti,-3/2)\
-          *ni*np.power(self.Z,4)*self.coulomb_log_ii 
+      self.collision_freq_ii = np.zeros((self.nion,self.nion))
+      for i in range(self.nion):
+        for j in range(self.nion):
+          vid = _sym_mtx_to_vec(i,j,self.nion) 
+          self.collision_freq_ii[i,j] = 6.8e-8*np.sqrt(mui[j])/mui[i]\
+              *(1+mui[j]/mui[i])*np.power(Ti[j],-3/2)\
+              *ni[j]*np.power(Z[i]*Z[j],2)*self.coulomb_log_ii[vid]
 
   # Return NRL formulary units for collision quantity calcs
   def __nrl_collisions(self,species):
