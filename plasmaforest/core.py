@@ -42,6 +42,8 @@ class forest:
     self.Ti = Ti # Ion temperatures
     self.ni = ni # Ion densities
     self.mi = mi # Ion masses
+    self.vthi = None # Ion thermal velocities
+    self.ompi = None # Ion plasma frequencies
     self.coulomb_log_ei = None # Electron-ion coulomb logs
     self.coulomb_log_ii = None # Ion-ion coulomb logs
     self.collision_freq_ei = None # Electron-ion collision frequencies
@@ -65,18 +67,28 @@ class forest:
       elif nion > 0:
         dtype_check(arrs[i],dtypes[i])
 
-  # Get electron thermal velocity
-  def get_vthe(self):
-    Te = self.Te * u.K
-    vthe = pp.formulary.parameters.thermal_speed(T=Te,particle='e-',\
-        ndim=self.ndim,method='rms')
-    self.vthe = vthe.value
+  # Get thermal velocity
+  def get_vth(self,species:str):
+    if species == 'e':
+      Te = self.Te * u.K
+      vthe = pp.formulary.parameters.thermal_speed(T=Te,particle='e-',\
+          ndim=self.ndim,method='rms')
+      self.vthe = vthe.value
+    elif species == 'i':
+      self.vthi = np.sqrt(self.ndim*self.Te*sc.k/self.mi)
+    else:
+      raise Exception("species must be one of \'e\' or \'i\'.")
 
   # Get electron plasma frequency
-  def get_ompe(self):
-    ne = self.ne / u.m**3
-    ompe = pp.formulary.parameters.plasma_frequency(n=ne,particle='e-')
-    self.ompe = ompe.value
+  def get_omp(self,species:str):
+    if species == 'e':
+      ne = self.ne / u.m**3
+      ompe = pp.formulary.parameters.plasma_frequency(n=ne,particle='e-')
+      self.ompe = ompe.value
+    elif species == 'i':
+      self.ompi = np.sqrt(sqr(self.Z*sc.e)*self.ni/(self.mi*sc.epsilon_0))
+    else:
+      raise Exception("species must be one of \'e\' or \'i\'.")
 
   # Get Debye length
   def get_dbyl(self):
@@ -119,6 +131,7 @@ class forest:
           raise Exception(\
               "Error: coulomb_log_ei calc does not fit any NRL formulary cases") 
       self.coulomb_log_ei = cl
+
     # Electron-electron
     elif species == 'ee':
       ne,Te = nrl
@@ -198,7 +211,7 @@ class forest:
   # Solve the EMW dispersion relation in a plasma
   def emw_dispersion(self,arg:floats,target:str) -> floats:
     if self.ompe is None:
-      self.get_ompe()
+      self.get_omp(species='e')
     if target == 'omega':
       return np.sqrt(sqr(self.ompe) + sqr(sc.c*arg))
     elif target == 'k':
@@ -210,7 +223,7 @@ class forest:
   # Return residual of emw dispersion relation in dimensionless units for accuracy
   def emw_dispersion_res(self,omega:floats,k:floats) -> floats:
     if self.ompe is None:
-      self.get_ompe()
+      self.get_omp(species='e')
     kvac = omega/sc.c
     k0 = k/kvac
     ompe0 = self.ompe/omega
@@ -219,9 +232,9 @@ class forest:
   # Fluid EPW dispersion relation
   def bohm_gross(self,arg:floats,target:str) -> floats:
     if self.ompe is None:
-      self.get_ompe()
+      self.get_omp(species='e')
     if self.vthe is None:
-      self.get_vthe()
+      self.get_vth(species='e')
     gamma = (2+self.ndim)/self.ndim
     prefac = gamma/self.ndim
     if target == 'omega':
@@ -235,28 +248,68 @@ class forest:
   # Residual of fluid EPW dispersion relation
   def bohm_gross_res(self,omega:floats,k:floats) -> floats:
     if self.ompe is None:
-      self.get_ompe()
+      self.get_omp(species='e')
     if self.vthe is None:
-      self.get_vthe()
+      self.get_vth(species='e')
     gamma = (2+self.ndim)/self.ndim
     prefac = gamma/self.ndim
     return -sqr(omega)+prefac*sqr(self.vthe*k)+sqr(self.ompe)
 
   # Plasma dispersion function
   def Zfun(self,omega:flomplex,k:flomplex,species:str) -> flomplex:
+    zeta = self.__zeta__(omega=omega,k=k,species=species)
+    Z = pp.dispersion.plasma_dispersion_func(zeta)
+    return Z
+
+  # Derivative of plasma dispersion function
+  def dZfun(self,omega:flomplex,k:flomplex,species:str) -> flomplex:
+    zeta = self.__zeta__(omega=omega,k=k,species=species)
+    Z = pp.dispersion.plasma_dispersion_func(zeta)
+    dZ = -2*(1+zeta*Z)
+
+  # Calculate zeta for both plasma dispersion function and its derivative
+  def __zeta__(self,omega:flomplex,k:flomplex,species:str) -> flomplex:
     if species == 'e':
       if self.vthe is None:
-        self.get_vthe()
+        self.get_vth(species='e')
       a = self.vthe*np.sqrt(2/self.ndim)
     elif species == 'i':
       if self.vthi is None:
-        self.get_vthi()
+        self.get_vth(species='i')
       a = self.vthi*np.sqrt(2/self.ndim)
     else:
       raise Exception("species must be one of \'e\' or \'i\'.")
-    zeta = omega/k/a
-    Z = pp.dispersion.plasma_dispersion_func(zeta)
-    
+    return omega/k/a
+
+  # Plasma susceptibility calculated with the plasma dispersion function
+  def susceptibility(self,omega:flomplex,k:flomplex,species:str) -> flomplex: 
+    dZ = dZfun(omega=omega,k=k,species=species)
+    if species == 'e':
+      if self.vthe is None:
+        self.get_vth(species='e')
+      if self.ompe is None:
+        self.get_omp(species='e')
+      a = self.vthe*np.sqrt(2/self.ndim)
+      omp = self.ompe
+    elif species == 'i':
+      if self.vthi is None:
+        self.get_vth(species='i')
+      if self.ompi is None:
+        self.get_omp(species='i')
+      omp = self.ompi
+      a = self.vthi*np.sqrt(2/self.ndim)
+    else:
+      raise Exception("species must be one of \'e\' or \'i\'.")
+      
+      return -sqr(omp/(k*a))*dZ
+
+
+  # Kinetic di
+  def kinetic_dispersion(self,omega:flomplex,k:flomplex,full:Optional[bool]=True) -> flomplex:
+    dis = 1 + susceptibility(omega=omega,k=k,species='e')
+    if full:
+      dis += np.sum(susceptibility(omega=omega,k=k,species='i'))
+    return dis
 
 # Function for converting between eV and K using astropy
 @typechecked

@@ -53,13 +53,13 @@ real_assert(birch.Te,Techeck,1e4)
 
 ## Calculate quantities and validate
 # Electron thermal velocity
-birch.get_vthe()
+birch.get_vth(species='e')
 vthe_check = 22.97*1e-6*1e12
 print('v_{th,e} [m/s]: %0.3e' % (birch.vthe))
 real_assert(birch.vthe,vthe_check,1e4)
 
 # Electron plasma frequency
-birch.get_ompe()
+birch.get_omp(species='e')
 ompe_check = 1.697*1e15
 print('\omega_{p,e} [1/s]: %0.3e' % (birch.ompe))
 real_assert(birch.ompe,ompe_check,1e12)
