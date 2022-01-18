@@ -209,15 +209,22 @@ class forest:
     gamma = (2+self.ndim)/self.ndim
     prefac = gamma/self.ndim
     if target == 'omega':
-      print(np.sqrt(sqr(self.ompe) + gamma*sqr(self.Te*sc.k/sc.m_e*arg)))
       return np.sqrt(sqr(self.ompe) + prefac*sqr(self.vthe*arg))
     elif target == 'k':
-      print(np.sqrt((sqr(arg) - sqr(self.ompe))\
-          /(gamma*sqr(self.Te*sc.k/sc.m_e))))
       return np.sqrt((sqr(arg) - sqr(self.ompe))\
           /(prefac*sqr(self.vthe)))
     else:
       raise Exception("target must be one of \'omega\' or \'k\'.")
+
+  # Residual of fluid EPW dispersion relation
+  def bohm_gross_res(self,omega,k):
+    if self.ompe is None:
+      self.get_ompe()
+    if self.vthe is None:
+      self.get_vthe()
+    gamma = (2+self.ndim)/self.ndim
+    prefac = gamma/self.ndim
+    return -sqr(omega)+prefac*sqr(self.vthe*k)+sqr(self.ompe)
 
 # Function for converting between eV and K using astropy
 def temperature_energy(T,method):

@@ -94,6 +94,16 @@ real_assert(om0,laser_omega,1e12)
 res = birch.emw_dispersion_res(om0,k0)
 real_assert(abs(res),0,1e-15)
 
+# EPW fluid dispersion
+om1s = 2.086e15
+k1 = birch.bohm_gross(arg=om1s,target='k')
+print('k_{ek} [1/m]: %0.3e' % (k1)) 
+om1 = birch.bohm_gross(arg=k1,target='omega')
+print('\omega_{ek} [1/s]: %0.3e' % (om1)) 
+real_assert(om1,om1s,1e12)
+res = birch.bohm_gross_res(om1,k1)
+real_assert(abs(res),0,1e-15)
+
 # Final statement
 print('All tests in forest_test.py complete.\n')
 
