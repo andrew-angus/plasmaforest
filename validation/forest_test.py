@@ -33,8 +33,8 @@ Te = temperature_energy(TeeV,'eVtoK')
 nion = 2
 Z = np.array([1,2])
 mi = np.array([1,4])*sc.m_p
-Ti = np.ones(nion)*Te/3
-ni = np.ones(nion)*ne/3
+Ti = np.ones(int(nion))*Te/3
+ni = np.ones(int(nion))*ne/3
 np.set_printoptions(precision=3)
 
 # Get forest class instance and assert setup

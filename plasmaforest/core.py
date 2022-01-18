@@ -4,14 +4,26 @@ import plasmapy as pp
 import astropy.units as u
 import scipy.constants as sc
 import numpy as np
+from typing import Union,Optional,Tuple
+from pytypes import typechecked
+
+# Custom types
+floats = Union[np.float64,float,np.ndarray]
+ints = Union[np.int_,int,np.ndarray]
+complexes = Union[np.complex64,complex,np.ndarray]
+flint = Union[floats,ints]
+flomplex = Union[floats,complexes]
 
 # Core class, mainly a wrapper of select plasmapy functionality
 # Currently restricted to single-ion species
 # Specifying ion parameters optional
 # Take inputs in SI units
+@typechecked
 class forest:
   # Initialise with physical parameters and dimensionality
-  def __init__(self,Te,ne,ndim,nion,Ti=None,ni=None,Z=None,mi=None):
+  def __init__(self,Te:floats,ne:floats,ndim:ints,nion:ints,\
+      Ti:Optional[np.ndarray]=None,ni:Optional[np.ndarray]=None,\
+      Z:Optional[np.ndarray]=None,mi:Optional[np.ndarray]=None):
     self.Te = Te # Electron temperature
     self.ne = ne # Electron density
     self.ndim = ndim # Plasma dimensionality
@@ -22,7 +34,9 @@ class forest:
     self.collision_freq_ee = None # Electron-electron collision frequency
     self.set_ions(nion=nion,Ti=Ti,ni=ni,Z=Z,mi=mi)
 
-  def set_ions(self,nion,Ti=None,ni=None,Z=None,mi=None):
+  def set_ions(self,nion:ints,Ti:Optional[np.ndarray]=None,\
+      ni:Optional[np.ndarray]=None,Z:Optional[np.ndarray]=None,\
+      mi:Optional[np.ndarray]=None):
     self.nion = nion # Number of ion species
     self.Z = Z # Ion charge states
     self.Ti = Ti # Ion temperatures
@@ -35,17 +49,21 @@ class forest:
     self.collision_freq_ii = None # Ion-ion collision frequencies
 
     # Check nion > 0
-    if nion < 0 or not isinstance(nion,int):
+    if nion < 0:
       raise Exception("nion parameter must be integer >= 0")
 
     # Check ion parameter specification
-    for i in [Z,Ti,ni,mi]:
-      if i is None and nion > 0:
+    arrs = [Z,Ti,ni,mi]
+    dtypes = [np.int_,np.float64,np.float64,np.float64]
+    for i in range(len(arrs)):
+      if arrs[i] is None and nion > 0:
         raise Exception("nion > 0 but not all ion parameters specified")
-      elif i is not None and nion == 0:
+      elif arrs[i] is not None and nion == 0:
         raise Exception("nion = 0 but ion parameters specified")
-      elif nion > 0 and (not isinstance(i,np.ndarray) or len(i) != nion):
+      elif nion > 0 and len(arrs[i]) != nion:
         raise Exception("Ion parameters must be numpy arrays of length nion")
+      elif nion > 0:
+        dtype_check(arrs[i],dtypes[i])
 
   # Get electron thermal velocity
   def get_vthe(self):
@@ -69,7 +87,7 @@ class forest:
 
   # Get coulomb logaritms
   # Calculated using NRL formulary (which uses cgs units)
-  def get_coulomb_log(self,species):
+  def get_coulomb_log(self,species:str):
     # Check ion parameters specified
     if species in ['ei','ie','ii'] and self.nion == 0:
       print('Warning: no ion parameters specified to '\
@@ -77,7 +95,7 @@ class forest:
       return
 
     # Get everything in cgs units, eV for temperatures
-    nrl = self.__nrl_collisions(species)
+    nrl = self.__nrl_collisions__(species)
     Z = self.Z
 
     ## Coulomb log calcs for different species
@@ -113,17 +131,13 @@ class forest:
       self.coulomb_log_ii = np.zeros(uniques)
       for i in range(self.nion):
         for j in range(i+1):
-          vid = _sym_mtx_to_vec(i,j,self.nion) 
+          vid = sym_mtx_to_vec(i,j,self.nion) 
           self.coulomb_log_ii[vid] = 23-np.log(Z[i]*Z[j]*(mui[i]+mui[j])\
               /(mui[i]*Ti[j]+mui[j]*Ti[i])*np.sqrt(ni[i]*sqr(Z[i])\
               /Ti[i]+ni[j]*sqr(Z[j])/Ti[j]))
-    else:
-      raise Exception(\
-          "Error: species must be one of \'ei\', \'ie\', \'ee\' or \'ii\'")
-
 
   # Calculate collision frequency according to NRL formulary
-  def get_collision_freq(self,species):
+  def get_collision_freq(self,species:str):
     # Check ion parameters specified if required
     if species in ['ei','ie','ii'] and self.nion == 0:
       print('Warning: no ion parameters specified to '\
@@ -131,7 +145,7 @@ class forest:
       return
 
     # Get everything in cgs units, eV for temperatures
-    nrl = self.__nrl_collisions(species)
+    nrl = self.__nrl_collisions__(species)
     Z = self.Z
 
     # Calculate collision frequencies for each species pair
@@ -160,13 +174,13 @@ class forest:
       self.collision_freq_ii = np.zeros((self.nion,self.nion))
       for i in range(self.nion):
         for j in range(self.nion):
-          vid = _sym_mtx_to_vec(i,j,self.nion) 
+          vid = sym_mtx_to_vec(i,j,self.nion) 
           self.collision_freq_ii[i,j] = 6.8e-8*np.sqrt(mui[j])/mui[i]\
               *(1+mui[j]/mui[i])*pwr(Ti[j],-3/2)\
               *ni[j]*sqr(Z[i]*Z[j])*self.coulomb_log_ii[vid]
 
   # Return NRL formulary units for collision quantity calcs
-  def __nrl_collisions(self,species):
+  def __nrl_collisions__(self,species:str):
     ne = (self.ne/u.m**3).cgs.value
     Te = temperature_energy(self.Te,method='KtoeV')
     if species in ['ei','ie','ii']:
@@ -176,11 +190,13 @@ class forest:
       mui = self.mi/sc.m_p
       ni = (self.ni/u.m**3).cgs.value
       return ne,Te,Ti,me,mi,mui,ni
-    else:
+    elif species == 'ee':
       return ne,Te
+    else:
+      raise Exception("species must be one of [\'ei\',\'ee\',\'ie\',\'ii\'].")
 
   # Solve the EMW dispersion relation in a plasma
-  def emw_dispersion(self,arg,target):
+  def emw_dispersion(self,arg:floats,target:str) -> floats:
     if self.ompe is None:
       self.get_ompe()
     if target == 'omega':
@@ -192,7 +208,7 @@ class forest:
       raise Exception("target must be one of \'omega\' or \'k\'.")
 
   # Return residual of emw dispersion relation in dimensionless units for accuracy
-  def emw_dispersion_res(self,omega,k):
+  def emw_dispersion_res(self,omega:floats,k:floats) -> floats:
     if self.ompe is None:
       self.get_ompe()
     kvac = omega/sc.c
@@ -201,7 +217,7 @@ class forest:
     return -1.0+sqr(k0)+sqr(ompe0)
 
   # Fluid EPW dispersion relation
-  def bohm_gross(self,arg,target):
+  def bohm_gross(self,arg:floats,target:str) -> floats:
     if self.ompe is None:
       self.get_ompe()
     if self.vthe is None:
@@ -217,7 +233,7 @@ class forest:
       raise Exception("target must be one of \'omega\' or \'k\'.")
 
   # Residual of fluid EPW dispersion relation
-  def bohm_gross_res(self,omega,k):
+  def bohm_gross_res(self,omega:floats,k:floats) -> floats:
     if self.ompe is None:
       self.get_ompe()
     if self.vthe is None:
@@ -226,8 +242,25 @@ class forest:
     prefac = gamma/self.ndim
     return -sqr(omega)+prefac*sqr(self.vthe*k)+sqr(self.ompe)
 
+  # Plasma dispersion function
+  def Zfun(self,omega:flomplex,k:flomplex,species:str) -> flomplex:
+    if species == 'e':
+      if self.vthe is None:
+        self.get_vthe()
+      a = self.vthe*np.sqrt(2/self.ndim)
+    elif species == 'i':
+      if self.vthi is None:
+        self.get_vthi()
+      a = self.vthi*np.sqrt(2/self.ndim)
+    else:
+      raise Exception("species must be one of \'e\' or \'i\'.")
+    zeta = omega/k/a
+    Z = pp.dispersion.plasma_dispersion_func(zeta)
+    
+
 # Function for converting between eV and K using astropy
-def temperature_energy(T,method):
+@typechecked
+def temperature_energy(T:floats,method:str) -> floats:
   if method == 'KtoeV':
     T = T * u.K
     TeV = T.to(u.eV,equivalencies=u.temperature_energy())
@@ -241,20 +274,23 @@ def temperature_energy(T,method):
         "or \'eVtoK\'.")
 
 # Modified assertion function for real valued arguments
-def real_assert(val,valcheck,diff):
-  assert(val > valcheck - diff)
-  assert(val < valcheck + diff)
+@typechecked
+def real_assert(val:floats,valcheck:floats,diff:floats):
+  assert val > valcheck - diff
+  assert val < valcheck + diff
 
 # Symmetric matrix entry represented by unique entry in 1D vector
 # This routine returns the vector id for 2D index arguments
-def _sym_mtx_to_vec(i,j,n):
+@typechecked
+def sym_mtx_to_vec(i:ints,j:ints,n:ints) -> ints:
   if i <= j:
     return i*n-(i-1)*i//2+j-i;
   else:
     return j*n-(j-1)*j//2+i-j;
 
 # Reverse to go from vector to symmetric matrix
-def _vec_to_sym_mtx(i,n):
+@typechecked
+def vec_to_sym_mtx(i:ints,n:ints) -> Tuple[ints,ints]:
   row = 0
   keyafter = -1
   while i >= keyafter:
@@ -265,9 +301,18 @@ def _vec_to_sym_mtx(i,n):
   return row,col
 
 # Short numpy power routine
-def pwr(arg,power):
+@typechecked
+def pwr(arg:flint,power:flint) -> flint:
   return np.power(arg,power)
 
 # Short numpy square
-def sqr(arg):
+@typechecked
+def sqr(arg:flint) -> flint:
   return pwr(arg,2)
+
+# Checks numpy datatype is correct
+@typechecked
+def dtype_check(arr:np.ndarray,dtype:type):
+  assert arr.dtype == dtype, f'numpy array {arr} must be {dtype} dtype'+\
+      f' but is {arr.dtype}'
+
