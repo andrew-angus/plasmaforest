@@ -88,15 +88,15 @@ class forest:
       cl = np.zeros(self.nion)
       for i in range(self.nion):
         Ti_mr = Ti[i]*me/mi[i]
-        Zscaled = 10*np.power(Z[i],2)
+        Zscaled = 10*sqr(Z[i])
         # Evaluation cases
         if Ti_mr < Te and Te < Zscaled:
-          cl[i] = 23-np.log(np.sqrt(ne)*Z[i]*np.power(Te,-3/2))
+          cl[i] = 23-np.log(np.sqrt(ne)*Z[i]*pwr(Te,-3/2))
         elif Ti_mr < Zscaled and Zscaled < Te:
           cl[i] = 24-np.log(np.sqrt(ne)/Te)
         elif Te < Ti_mr:
-          cl[i] = 16-np.log(np.sqrt(ni[i])*np.power(Ti[i],-3/2)\
-              *np.power(Z[i],2)*mui[i])
+          cl[i] = 16-np.log(np.sqrt(ni[i])*pwr(Ti[i],-3/2)\
+              *sqr(Z[i])*mui[i])
         else:
           raise Exception(\
               "Error: coulomb_log_ei calc does not fit any NRL formulary cases") 
@@ -104,8 +104,8 @@ class forest:
     # Electron-electron
     elif species == 'ee':
       ne,Te = nrl
-      self.coulomb_log_ee = 23.5-np.log(np.sqrt(ne)*np.power(Te,-5/4))\
-          -np.sqrt(1e-5+np.power(np.log(Te)-2,2)/16)
+      self.coulomb_log_ee = 23.5-np.log(np.sqrt(ne)*pwr(Te,-5/4))\
+          -np.sqrt(1e-5+sqr(np.log(Te)-2)/16)
     # Ion-ion
     elif species == 'ii':
       ne,Te,Ti,me,mi,mui,ni = nrl
@@ -115,8 +115,8 @@ class forest:
         for j in range(i+1):
           vid = _sym_mtx_to_vec(i,j,self.nion) 
           self.coulomb_log_ii[vid] = 23-np.log(Z[i]*Z[j]*(mui[i]+mui[j])\
-              /(mui[i]*Ti[j]+mui[j]*Ti[i])*np.sqrt(ni[i]*np.power(Z[i],2)\
-              /Ti[i]+ni[j]*np.power(Z[j],2)/Ti[j]))
+              /(mui[i]*Ti[j]+mui[j]*Ti[i])*np.sqrt(ni[i]*sqr(Z[i])\
+              /Ti[i]+ni[j]*sqr(Z[j])/Ti[j]))
     else:
       raise Exception(\
           "Error: species must be one of \'ei\', \'ie\', \'ee\' or \'ii\'")
@@ -139,20 +139,20 @@ class forest:
       ne,Te,Ti,me,mi,mui,ni = nrl
       if self.coulomb_log_ei is None:
         self.get_coulomb_log(species='ei')
-      self.collision_freq_ei = 3.9e-6*np.power(Te,-3/2)*ni*np.power(self.Z,2)\
+      self.collision_freq_ei = 3.9e-6*pwr(Te,-3/2)*ni*sqr(self.Z)\
           *self.coulomb_log_ei 
     elif species == 'ee':
       ne,Te = nrl
       if self.coulomb_log_ee is None:
         self.get_coulomb_log(species='ee')
-      self.collision_freq_ee = 7.7e-6*np.power(Te,-3/2)*ne\
+      self.collision_freq_ee = 7.7e-6*pwr(Te,-3/2)*ne\
           *self.coulomb_log_ee 
     elif species == 'ie':
       ne,Te,Ti,me,mi,mui,ni = nrl
       if self.coulomb_log_ei is None:
         self.get_coulomb_log(species='ei')
-      self.collision_freq_ie = 1.6e-9/mui*np.power(Te,-3/2)*ne\
-          *np.power(self.Z,2)*self.coulomb_log_ei 
+      self.collision_freq_ie = 1.6e-9/mui*pwr(Te,-3/2)*ne\
+          *sqr(self.Z)*self.coulomb_log_ei 
     elif species == 'ii':
       ne,Te,Ti,me,mi,mui,ni = nrl
       if self.coulomb_log_ii is None:
@@ -162,8 +162,8 @@ class forest:
         for j in range(self.nion):
           vid = _sym_mtx_to_vec(i,j,self.nion) 
           self.collision_freq_ii[i,j] = 6.8e-8*np.sqrt(mui[j])/mui[i]\
-              *(1+mui[j]/mui[i])*np.power(Ti[j],-3/2)\
-              *ni[j]*np.power(Z[i]*Z[j],2)*self.coulomb_log_ii[vid]
+              *(1+mui[j]/mui[i])*pwr(Ti[j],-3/2)\
+              *ni[j]*sqr(Z[i]*Z[j])*self.coulomb_log_ii[vid]
 
   # Return NRL formulary units for collision quantity calcs
   def __nrl_collisions(self,species):
@@ -178,6 +178,46 @@ class forest:
       return ne,Te,Ti,me,mi,mui,ni
     else:
       return ne,Te
+
+  # Solve the EMW dispersion relation in a plasma
+  def emw_dispersion(self,arg,target):
+    if self.ompe is None:
+      self.get_ompe()
+    if target == 'omega':
+      return np.sqrt(sqr(self.ompe) + sqr(sc.c*arg))
+    elif target == 'k':
+      return np.sqrt((sqr(arg) - sqr(self.ompe))\
+          /sqr(sc.c))
+    else:
+      raise Exception("target must be one of \'omega\' or \'k\'.")
+
+  # Return residual of emw dispersion relation in dimensionless units for accuracy
+  def emw_dispersion_res(self,omega,k):
+    if self.ompe is None:
+      self.get_ompe()
+    kvac = omega/sc.c
+    k0 = k/kvac
+    ompe0 = self.ompe/omega
+    return -1.0+sqr(k0)+sqr(ompe0)
+
+  # Fluid EPW dispersion relation
+  def bohm_gross(self,arg,target):
+    if self.ompe is None:
+      self.get_ompe()
+    if self.vthe is None:
+      self.get_vthe()
+    gamma = (2+self.ndim)/self.ndim
+    prefac = gamma/self.ndim
+    if target == 'omega':
+      print(np.sqrt(sqr(self.ompe) + gamma*sqr(self.Te*sc.k/sc.m_e*arg)))
+      return np.sqrt(sqr(self.ompe) + prefac*sqr(self.vthe*arg))
+    elif target == 'k':
+      print(np.sqrt((sqr(arg) - sqr(self.ompe))\
+          /(gamma*sqr(self.Te*sc.k/sc.m_e))))
+      return np.sqrt((sqr(arg) - sqr(self.ompe))\
+          /(prefac*sqr(self.vthe)))
+    else:
+      raise Exception("target must be one of \'omega\' or \'k\'.")
 
 # Function for converting between eV and K using astropy
 def temperature_energy(T,method):
@@ -216,3 +256,11 @@ def _vec_to_sym_mtx(i,n):
   row -= 1
   col = n-keyafter+i
   return row,col
+
+# Short numpy power routine
+def pwr(arg,power):
+  return np.power(arg,power)
+
+# Short numpy square
+def sqr(arg):
+  return pwr(arg,2)

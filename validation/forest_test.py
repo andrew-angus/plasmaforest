@@ -79,10 +79,20 @@ real_assert(birch.coulomb_log_ei[0],cl_check,1e-2)
 # Electron-ion collision frequency
 birch.get_collision_freq(species='ei')
 nu_check = 0.21*1e12
-print('\\nu_{ei}:',birch.collision_freq_ei)
+print('\\nu_{ei} [1/s]:',birch.collision_freq_ei)
 nu_tot = np.sum(birch.collision_freq_ei)
-print('\\nu_{ei,tot}: %0.3e' % (nu_tot))
+print('\\nu_{ei,tot} [1/s]: %0.3e' % (nu_tot))
 real_assert(nu_tot,nu_check,1e11)
+
+# EMW dispersion
+k0 = birch.emw_dispersion(arg=laser_omega,target='k')
+print('k_{0} [1/m]: %0.3e' % (k0)) 
+real_assert(k0,laser_kvac,1e6)
+om0 = birch.emw_dispersion(arg=k0,target='omega')
+print('\omega_{0} [1/s]: %0.3e' % (om0)) 
+real_assert(om0,laser_omega,1e12)
+res = birch.emw_dispersion_res(om0,k0)
+real_assert(abs(res),0,1e-15)
 
 # Final statement
 print('All tests in forest_test.py complete.\n')
