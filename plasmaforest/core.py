@@ -79,7 +79,7 @@ class forest:
     else:
       raise Exception("species must be one of \'e\' or \'i\'.")
 
-  # Get electron plasma frequency
+  # Get plasma frequency
   def get_omp(self,species:str):
     if species == 'e':
       ne = self.ne / u.m**3
@@ -303,8 +303,7 @@ class forest:
       
       return -sqr(omp/(k*a))*dZ
 
-
-  # Kinetic di
+  # Linear kinetic dispersion equation
   def kinetic_dispersion(self,omega:flomplex,k:flomplex,full:Optional[bool]=True) -> flomplex:
     dis = 1 + susceptibility(omega=omega,k=k,species='e')
     if full:
@@ -328,9 +327,13 @@ def temperature_energy(T:floats,method:str) -> floats:
 
 # Modified assertion function for real valued arguments
 @typechecked
-def real_assert(val:floats,valcheck:floats,diff:floats):
-  assert val > valcheck - diff
-  assert val < valcheck + diff
+def real_assert(val:floats,valcheck:floats,diff:floats,msg:Optional[str]=None):
+  if msg is not None:
+    assert val > valcheck - diff
+    assert val < valcheck + diff
+  else:
+    assert val > valcheck - diff, msg
+    assert val < valcheck + diff, msg
 
 # Symmetric matrix entry represented by unique entry in 1D vector
 # This routine returns the vector id for 2D index arguments
