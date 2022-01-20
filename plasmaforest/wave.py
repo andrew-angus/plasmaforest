@@ -120,15 +120,15 @@ class wave_forest(forest):
     return dis
 
   # Phase velocity of a wave
-  def phase_velocity(self,omega:floats,k:floats):
+  def phase_velocity(self,omega:floats,k:floats) -> floats:
     return omega/k
 
   # EMW group velocity
-  def emw_group_velocity(self,omega,k):
+  def emw_group_velocity(self,omega,k) -> floats:
     return sqr(sc.c)*k/omega
 
   # EPW bohm-gross group velocity
-  def bohm_gross_group_velocity(self,omega,k)
+  def bohm_gross_group_velocity(self,omega,k) -> floats:
     if self.vthe is None:
       self.get_vth(species='e')
     gamma = (2+self.ndim)/self.ndim

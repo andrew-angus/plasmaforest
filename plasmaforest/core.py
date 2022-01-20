@@ -4,7 +4,7 @@ import plasmapy as pp
 import astropy.units as u
 import scipy.constants as sc
 import numpy as np
-from typing import Union,Optional,Tuple
+from typing import Union,Optional,Tuple,Any
 from typeguard import typechecked
 
 # Custom types
@@ -15,25 +15,26 @@ flint = Union[floats,ints]
 flomplex = Union[floats,complexes]
 
 # Core class, common plasma parameters
-# Specifying ion parameters optional
 # Take inputs in SI units
 @typechecked
 class forest:
   # Initialise with physical parameters and dimensionality
-  def __init__(self,Te:floats,ne:floats,ndim:ints,nion:ints,\
+  def __init__(self,ndim:int,electrons:bool,nion:int,\
+      Te:Optional[float]=None,ne:Optional[float]=None,\
       Ti:Optional[np.ndarray]=None,ni:Optional[np.ndarray]=None,\
       Z:Optional[np.ndarray]=None,mi:Optional[np.ndarray]=None):
-    self.Te = Te # Electron temperature
-    self.ne = ne # Electron density
-    self.ndim = ndim # Plasma dimensionality
-    self.vthe = None # Electron thermal velocity
-    self.ompe = None # Electron plasma frequency
-    self.dbyl = None # Debye length
-    self.coulomb_log_ee = None # Electron-electron coulomb log
-    self.collision_freq_ee = None # Electron-electron collision frequency
+    self.set_ndim(ndim=ndim)
+    self.set_electrons(electrons=electrons,Te=Te,ne=ne)
     self.set_ions(nion=nion,Ti=Ti,ni=ni,Z=Z,mi=mi)
 
-  def set_ions(self,nion:ints,Ti:Optional[np.ndarray]=None,\
+  # Set number of dimensions and null dimension-dependent properties
+  def set_ndim(self,ndim:int)
+    self.ndim = ndim # Plasma dimensionality
+    self.vthe = None
+    self.vthi = None
+
+  # Set ion properties and null any ion-dependent properties
+  def set_ions(self,nion:int,Ti:Optional[np.ndarray]=None,\
       ni:Optional[np.ndarray]=None,Z:Optional[np.ndarray]=None,\
       mi:Optional[np.ndarray]=None):
     self.nion = nion # Number of ion species
@@ -49,7 +50,7 @@ class forest:
     self.collision_freq_ie = None # Ion-electron collision frequencies
     self.collision_freq_ii = None # Ion-ion collision frequencies
 
-    # Check nion > 0
+    # Check nion >= 0
     if nion < 0:
       raise Exception("nion parameter must be integer >= 0")
 
@@ -66,14 +67,44 @@ class forest:
       elif nion > 0:
         dtype_check(arrs[i],dtypes[i])
 
-  # Get thermal velocity
+  def set_electrons(self,electrons:bool,Te:Optional[float]=None,\
+      ne:Optional[float]=None)
+    self.electrons = electrons # Boolean switch for using electron properties
+    self.Te = Te # Electron temperature
+    self.ne = ne # Electron density
+    self.vthe = None # Electron thermal velocity
+    self.ompe = None # Electron plasma frequency
+    self.dbyl = None # Debye length
+    self.coulomb_log_ee = None # Electron-electron coulomb log
+    self.collision_freq_ee = None # Electron-electron collision frequency
+
+    # Check electron parameters specified correctly
+    if electrons:
+      if self.Te is None:
+        raise Exception("Parameter Te must be specified if electrons=True")
+      if self.ne is None:
+        raise Exception("Parameter ne must be specified if electrons=True")
+
+  # Method to check ion specification
+  def ion_check(self):
+    if self.nion == 0:
+      raise Exception('no ion parameters specified, use set_ions method.')
+
+  # Method to check electron specification
+  def electron_check(self):
+    if not electrons:
+      raise Exception('no electron parameters specified, use set_electrons method.')
+
+  # Get RMS thermal velocity
   def get_vth(self,species:str):
     if species == 'e':
+      self.electron_check()
       Te = self.Te * u.K
       vthe = pp.formulary.parameters.thermal_speed(T=Te,particle='e-',\
           ndim=self.ndim,method='rms')
       self.vthe = vthe.value
     elif species == 'i':
+      self.ion_check()
       self.vthi = np.sqrt(self.ndim*self.Te*sc.k/self.mi)
     else:
       raise Exception("species must be one of \'e\' or \'i\'.")
@@ -81,16 +112,19 @@ class forest:
   # Get plasma frequency
   def get_omp(self,species:str):
     if species == 'e':
+      self.electron_check()
       ne = self.ne / u.m**3
       ompe = pp.formulary.parameters.plasma_frequency(n=ne,particle='e-')
       self.ompe = ompe.value
     elif species == 'i':
+      self.ion_check()
       self.ompi = np.sqrt(sqr(self.Z*sc.e)*self.ni/(self.mi*sc.epsilon_0))
     else:
       raise Exception("species must be one of \'e\' or \'i\'.")
 
   # Get Debye length
   def get_dbyl(self):
+    self.electron_check()
     Te = self.Te * u.K
     ne = self.ne / u.m**3
     dbyl = pp.formulary.parameters.Debye_length(T_e=Te,n_e=ne)
@@ -99,11 +133,11 @@ class forest:
   # Get coulomb logaritms
   # Calculated using NRL formulary (which uses cgs units)
   def get_coulomb_log(self,species:str):
-    # Check ion parameters specified
-    if species in ['ei','ie','ii'] and self.nion == 0:
-      print('Warning: no ion parameters specified to '\
-          + 'calculate ion coulomb logarithm, use set_ions method.')
-      return
+    # Check parameters specified
+    if species in ['ei','ie','ii']:
+      self.ion_check()
+    if species in ['ee','ei','ie']:
+      self.electron_check()
 
     # Get everything in cgs units, eV for temperatures
     nrl = self.__nrl_collisions__(species)
@@ -150,11 +184,11 @@ class forest:
 
   # Calculate collision frequency according to NRL formulary
   def get_collision_freq(self,species:str):
-    # Check ion parameters specified if required
-    if species in ['ei','ie','ii'] and self.nion == 0:
-      print('Warning: no ion parameters specified to '\
-          + 'calculate ion collision frequency, use set_ions method.')
-      return
+    # Check parameters specified
+    if species in ['ei','ie','ii']:
+      self.ion_check()
+    if species in ['ee','ei','ie']:
+      self.electron_check()
 
     # Get everything in cgs units, eV for temperatures
     nrl = self.__nrl_collisions__(species)
@@ -192,7 +226,7 @@ class forest:
               *ni[j]*sqr(Z[i]*Z[j])*self.coulomb_log_ii[vid]
 
   # Return NRL formulary units for collision quantity calcs
-  def __nrl_collisions__(self,species:str):
+  def __nrl_collisions__(self,species:str) -> Tuple[Any]:
     ne = (self.ne/u.m**3).cgs.value
     Te = temperature_energy(self.Te,method='KtoeV')
     if species in ['ei','ie','ii']:

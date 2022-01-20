@@ -2,7 +2,6 @@
 from .core import *
 from .wave import *
 from typeguard import typechecked
-from typing import Optional, Union, Dict, TypedDict, Any
 
 # Laser-plasma forest with routines for laser specific quantities
 @typechecked
@@ -18,6 +17,8 @@ class laser_forest(wave_forest):
     self.k0 = None # Laser wavenumber in plasma
     self.ib = None # Inverse bremstrah
     self.v_quiver = None # Quiver velocity
+
+  # Need updated set_ndim, set_ions, set_electrons which clear additional attributes
 
   # Update intensity attribute
   def set_intensity(self,I0:floats):
