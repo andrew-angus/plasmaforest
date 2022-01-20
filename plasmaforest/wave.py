@@ -54,7 +54,7 @@ class wave_forest(forest):
     else:
       raise Exception("target must be one of \'omega\' or \'k\'.")
 
-  # Residual of fluid EPW dispersion relation
+  # Residual of fluid EPW dispersion relation, dimensionless for accuracy
   def bohm_gross_res(self,omega:floats,k:floats) -> floats:
     if self.ompe is None:
       self.get_omp(species='e')
@@ -62,7 +62,7 @@ class wave_forest(forest):
       self.get_vth(species='e')
     gamma = (2+self.ndim)/self.ndim
     prefac = gamma/self.ndim
-    return -sqr(omega)+prefac*sqr(self.vthe*k)+sqr(self.ompe)
+    return (-sqr(omega)+prefac*sqr(self.vthe*k))/sqr(self.ompe)+1.0
 
   # Plasma dispersion function
   def Zfun(self,omega:flomplex,k:flomplex,species:str) -> flomplex:

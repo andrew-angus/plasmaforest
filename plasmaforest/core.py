@@ -28,7 +28,7 @@ class forest:
     self.set_ions(nion=nion,Ti=Ti,ni=ni,Z=Z,mi=mi)
 
   # Set number of dimensions and null dimension-dependent properties
-  def set_ndim(self,ndim:int)
+  def set_ndim(self,ndim:int):
     self.ndim = ndim # Plasma dimensionality
     self.vthe = None
     self.vthi = None
@@ -68,7 +68,7 @@ class forest:
         dtype_check(arrs[i],dtypes[i])
 
   def set_electrons(self,electrons:bool,Te:Optional[float]=None,\
-      ne:Optional[float]=None)
+      ne:Optional[float]=None):
     self.electrons = electrons # Boolean switch for using electron properties
     self.Te = Te # Electron temperature
     self.ne = ne # Electron density
@@ -92,7 +92,7 @@ class forest:
 
   # Method to check electron specification
   def electron_check(self):
-    if not electrons:
+    if not self.electrons:
       raise Exception('no electron parameters specified, use set_electrons method.')
 
   # Get RMS thermal velocity
@@ -226,7 +226,7 @@ class forest:
               *ni[j]*sqr(Z[i]*Z[j])*self.coulomb_log_ii[vid]
 
   # Return NRL formulary units for collision quantity calcs
-  def __nrl_collisions__(self,species:str) -> Tuple[Any]:
+  def __nrl_collisions__(self,species:str) -> Tuple:
     ne = (self.ne/u.m**3).cgs.value
     Te = temperature_energy(self.Te,method='KtoeV')
     if species in ['ei','ie','ii']:
