@@ -5,7 +5,6 @@ import astropy.units as u
 import scipy.constants as sc
 import numpy as np
 from typing import Union,Optional,Tuple
-#from pytypes import typechecked
 from typeguard import typechecked
 
 # Custom types

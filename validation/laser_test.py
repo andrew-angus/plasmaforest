@@ -27,7 +27,25 @@ ni = np.ones(int(nion))*ne/3
 np.set_printoptions(precision=3)
 
 # Get forest class instance and assert setup
-birch = laser_forest(lambda0=laser_lambda,\
+alder = laser_forest(lambda0=laser_lambda,\
     Te=Te,ne=ne,ndim=ndim,nion=nion,Ti=Ti,ni=ni,Z=Z,mi=mi)
+
+# Dispersion
+alder.get_kvac()
+alder.get_omega0()
+alder.get_k0()
+print(f'\lambda_0 [m] = {laser_lambda:0.3e}')
+print(f'\omega_0 [1/s] = {alder.omega0:0.3e}')
+print(f'k_vac [1/m] = {alder.kvac:0.3e}')
+print(f'k_0 [1/m] = {alder.k0:0.3e}')
+real_assert(alder.omega0,laser_omega,1e12)
+real_assert(alder.kvac,laser_kvac,1e4)
+k0test = 16.98e6
+real_assert(alder.k0,k0test,1e4)
+
+# Critical density
+alder.get_nc()
+print(f'n_c [1/m^3] = {alder.nc:0.3e}')
+real_assert(alder.nc,nc,1e23)
 
 print('All tests in laser_test.py complete.\n')
