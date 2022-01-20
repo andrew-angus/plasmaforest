@@ -6,14 +6,22 @@ from typing import Optional, Union, Dict, TypedDict, Any
 # Laser-plasma forest with routines for laser specific quantities
 @typechecked
 class laser_forest(forest):
-  #def __init__(self,lambda0:floats,**kwargs:Union[Dict,Any]):
-  def __init__(self,lambda0:floats,*args,**kwargs):
+  # Initialise using laser vacuum wavelength and intensity
+  def __init__(self,lambda0:floats,I0:floats,*args,**kwargs):
     super().__init__(*args,**kwargs)
     self.lambda0 = lambda0 # Laser wavelength
+    self.I0 = I0 # Laser intensity
     self.nc = None # Critical density
     self.om0 = None # Laser frequency
     self.kvac = None # Laser wavenumber in vacuum
     self.k0 = None # Laser wavenumber in plasma
+    self.ib = None # Inverse bremstrah
+    self.v_quiver = None # Quiver velocity
+
+  # Update intensity attribute
+  def set_intensity(self,I0:floats):
+    self.I0 = I0
+    # Nullify any intensity-dependent attributes
 
   # Calculate vacuum wavenumber
   def get_kvac(self):
@@ -48,6 +56,8 @@ class laser_forest(forest):
   # Get laser collisional damping rate
   def get_collisional_damping(self):
     pass
+
+  # Get quiver velocity
 
 class srs_forest(laser_forest):
   def __init__(self,**kwargs):

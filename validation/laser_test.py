@@ -48,4 +48,6 @@ alder.get_nc()
 print(f'n_c [1/m^3] = {alder.nc:0.3e}')
 real_assert(alder.nc,nc,1e23)
 
+# Collisional damping
+
 print('All tests in laser_test.py complete.\n')
