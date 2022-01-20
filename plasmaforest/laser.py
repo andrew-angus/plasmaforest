@@ -10,23 +10,19 @@ class laser_forest(wave_forest):
   def __init__(self,lambda0:floats,I0:floats,*args,**kwargs):
     super().__init__(*args,**kwargs)
     self.lambda0 = lambda0 # Laser wavelength
-    self.I0 = I0 # Laser intensity
+    self.set_intensity(I0)
     self.om0 = None # Laser frequency
     self.kvac = None # Laser wavenumber in vacuum
-    self.k0 = None # Laser wavenumber in plasma
     self.nc0 = None # Critical density
-    self.ri0 = None # Refractive index
     self.ib = None # Inverse bremsstrahlung coefficient
-    self.E0 = None # E-field
-    self.v_quiv0 = None # Quiver velocity
 
   # Update nullfications on core attribute set routines
   def set_ndim(self,*args,**kwargs):
     super().set_ndim(*args,**kwargs)
   def set_electrons(self,*args,**kwargs):
     super().set_electrons(*args,**kwargs)
-    self.k0 = None
-    self.ri0 = None
+    self.k0 = None # Laser wavenumber in plasma
+    self.ri0 = None # Refractive index
   def set_ions(self,*args,**kwargs):
     super().set_ions(*args,**kwargs)
 
@@ -34,7 +30,8 @@ class laser_forest(wave_forest):
   def set_intensity(self,I0:floats):
     self.I0 = I0
     self.E0 = None # E-field
-    self.v_quiv = None # Quiver velocity
+    self.B0 = None # E-field
+    self.vos0 = None # Quiver velocity
 
   # Calculate vacuum wavenumber
   def get_kvac(self):
@@ -74,12 +71,29 @@ class laser_forest(wave_forest):
   def get_ri0(self):
     if self.nc0 is None:
       self.get_nc0()
-    self.ri0 = self.ri(self.nc0)
+    self.ri0 = self.emw_ri(self.nc0)
 
   # Get E field
+  def get_E0(self):
+    if self.ri0 is None:
+      self.get_ri0()
+    self.E0 = self.emw_E(self.I0,self.ri0)
+
+  # Get B field
+  """
+  def get_B0(self):
+    if self.vp0 is None:
+      self.get_vp0()
+    self.B0 = self.emw_E(self.I0,self.vp0)
+  """
 
   # Get quiver velocity
-
+  def get_vos0(self):
+    if self.omega0 is None:
+      self.get_omega0()
+    if self.E0 is None:
+      self.get_E0()
+    self.vos0 = self.emw_vos(self.E0,self.omega0)
 
 class srs_forest(laser_forest):
   def __init__(self,**kwargs):

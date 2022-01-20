@@ -124,11 +124,11 @@ class wave_forest(forest):
     return omega/k
 
   # EMW group velocity
-  def emw_group_velocity(self,omega,k) -> floats:
+  def emw_group_velocity(self,omega:floats,k:floats) -> floats:
     return sqr(sc.c)*k/omega
 
   # EPW bohm-gross group velocity
-  def bohm_gross_group_velocity(self,omega,k) -> floats:
+  def bohm_gross_group_velocity(self,omega:floats,k:floats) -> floats:
     if self.vthe is None:
       self.get_vth(species='e')
     gamma = (2+self.ndim)/self.ndim
@@ -140,6 +140,18 @@ class wave_forest(forest):
     return sc.epsilon_0*sc.m_e*sqr(omega/sc.e)
   
   # Refractive index function
-  def ri(self,nc:floats) -> floats:
+  def emw_ri(self,nc:floats) -> floats:
     self.electron_check()
     return np.sqrt(1-self.ne/nc)
+
+  # EMW E field in plasma
+  def emw_E(self,I:floats,ri:floats) -> floats:
+    return np.sqrt(2*I/(sc.epsilon_0*sc.c*ri))
+
+  # EMW B field in plasma
+  def emw_B(self,I:floats,vp:floats) -> floats:
+    return np.sqrt(2*I*sc.mu_0/vp)
+
+  # EMW electron quiver velocity
+  def emw_vos(self,E:floats,omega:floats) -> floats:
+    return sc.e*E/(sc.m_e*omega)

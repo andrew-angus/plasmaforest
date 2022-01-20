@@ -22,7 +22,7 @@ warnings.filterwarnings("ignore", category=RelativityWarning)
 # Setup case
 ndim = 1 # 1D case
 lambda0 = 351.0e-9 # m
-I0 = 2e18 # W/m^2
+I0 = 2e19 # W/m^2
 
 # Laser forest instance initially without plasma parameter specification
 birch = laser_forest(lambda0,I0,ndim,electrons=False,nion=0)
@@ -49,7 +49,7 @@ ne = 0.1*birch.nc0 # plasma at 0.1 nc
 TeeV = 3000 # eV
 Te = temperature_energy(TeeV,'eVtoK')
 birch.set_electrons(electrons=True,Te=Te,ne=ne)
-print('Te {K}: %0.1f; ne {1/m^3}: %0.3e' \
+print('Te [K]: %0.1f; ne [1/m^3]: %0.3e' \
     % (birch.Te,birch.ne))
 
 # Specify ion properties
@@ -60,48 +60,42 @@ Ti = np.ones(int(nion))*Te/3
 ni = np.ones(int(nion))*ne/3
 birch.set_ions(nion=nion,Ti=Ti,ni=ni,Z=Z,mi=mi)
 np.set_printoptions(precision=3)
-print('Ti {K}: %0.1f; nion: %d' \
+print('Ti [K]: %0.1f; nion: %d' \
     % (birch.Ti[0],birch.nion))
 print('Ions: [H,He]; Z:',Z)
-print('ni {1/m^3}:',ni,'; mi {kg}:',mi)
+print('ni [1/m^3]:',ni,'; mi {kg}:',mi)
 
 # Electron thermal velocity
 birch.get_vth(species='e')
-vthe_check = 22.97*1e-6*1e12
-print('v_{th,e} [m/s]: %0.3e' % (birch.vthe))
-real_assert(birch.vthe,vthe_check,1e4)
+print('v_th,e [m/s]: %0.3e' % (birch.vthe))
+real_assert(birch.vthe,22.97*1e-6*1e12,1e4)
 
 # Electron plasma frequency
 birch.get_omp(species='e')
-ompe_check = 1.697*1e15
-print('\omega_{p,e} [1/s]: %0.3e' % (birch.ompe))
-real_assert(birch.ompe,ompe_check,1e12)
+print('\omega_p,e [1/s]: %0.3e' % (birch.ompe))
+real_assert(birch.ompe,1.697*1e15,1e12)
 
 # Debye length
 birch.get_dbyl()
-dbyl_check = 13.54e-9
 print('\lambda_D [m]: %0.3e' % (birch.dbyl))
-real_assert(birch.dbyl,dbyl_check,1e-11)
+real_assert(birch.dbyl,13.54e-9,1e-11)
 
 # Electron-ion Coulomb logarithm
 birch.get_coulomb_log(species='ei')
-cl_check = 7.88
-print('\lambda_{ei}:',birch.coulomb_log_ei)
-real_assert(birch.coulomb_log_ei[0],cl_check,1e-2)
+print('\lambda_ei:',birch.coulomb_log_ei)
+real_assert(birch.coulomb_log_ei[0],7.88,1e-2)
 
 # Electron-ion collision frequency
 birch.get_collision_freq(species='ei')
-nu_check = 0.21*1e12
-print('\\nu_{ei} [1/s]:',birch.collision_freq_ei)
+print('\\nu_ei [1/s]:',birch.collision_freq_ei)
 nu_tot = np.sum(birch.collision_freq_ei)
-print('\\nu_{ei,tot} [1/s]: %0.3e' % (nu_tot))
-real_assert(nu_tot,nu_check,1e11)
+print('\\nu_ei,tot [1/s]: %0.3e' % (nu_tot))
+real_assert(nu_tot,0.21*1e12,1e11)
 
 # Laser wavenumber
 birch.get_k0()
 print(f'k_0 [1/m] = {birch.k0:0.3e}')
-k0test = 16.98e6
-real_assert(birch.k0,k0test,1e4)
+real_assert(birch.k0,16.98e6,1e4)
 
 # EMW dispersion checks
 om0 = birch.emw_dispersion(arg=birch.k0,target='omega')
@@ -112,9 +106,9 @@ real_assert(abs(res),0,1e-15)
 # EPW fluid dispersion checks
 om1s = 2.086e15
 k1 = birch.bohm_gross(arg=om1s,target='k')
-print('k_{ek} [1/m]: %0.3e' % (k1)) 
+print('k_ek [1/m]: %0.3e' % (k1)) 
 om1 = birch.bohm_gross(arg=k1,target='omega')
-print('\omega_{ek} [1/s]: %0.3e' % (om1)) 
+print('\omega_ek [1/s]: %0.3e' % (om1)) 
 real_assert(om1,om1s,1e12)
 res = birch.bohm_gross_res(om1,k1)
 real_assert(abs(res),0,1e-15)
@@ -124,6 +118,15 @@ birch.get_ri0()
 print(f'Laser RI: {birch.ri0:0.3f}')
 real_assert(birch.ri0,np.sqrt(0.9),1e-3)
 
+# Plasma E field
+birch.get_E0()
+print(f'E_0 [V/m]: {birch.E0:0.3e}')
+real_assert(birch.E0,0.126*1e12,1e8)
+
+# Laser quiver velocity
+birch.get_vos0()
+print(f'v_os,0 [m/s]: {birch.vos0:0.3e}')
+real_assert(birch.vos0,4.023*1e-6*1e12/np.sqrt(birch.ri0),1e3)
 
 # Final statement
 print('All health checks complete. What a happy forest.\n')
