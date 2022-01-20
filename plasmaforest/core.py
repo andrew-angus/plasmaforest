@@ -5,7 +5,8 @@ import astropy.units as u
 import scipy.constants as sc
 import numpy as np
 from typing import Union,Optional,Tuple
-from pytypes import typechecked
+#from pytypes import typechecked
+from typeguard import typechecked
 
 # Custom types
 floats = Union[np.float64,float,np.ndarray]
