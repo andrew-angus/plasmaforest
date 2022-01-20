@@ -30,8 +30,8 @@ class forest:
   # Set number of dimensions and null dimension-dependent properties
   def set_ndim(self,ndim:int):
     self.ndim = ndim # Plasma dimensionality
-    self.vthe = None
-    self.vthi = None
+    self.vthe = None # Electron RMS thermal velocity
+    self.vthi = None # Ion RMS thermal velocity
 
   # Set ion properties and null any ion-dependent properties
   def set_ions(self,nion:int,Ti:Optional[np.ndarray]=None,\
@@ -42,7 +42,7 @@ class forest:
     self.Ti = Ti # Ion temperatures
     self.ni = ni # Ion densities
     self.mi = mi # Ion masses
-    self.vthi = None # Ion thermal velocities
+    self.vthi = None # Ion RMS thermal velocities
     self.ompi = None # Ion plasma frequencies
     self.coulomb_log_ei = None # Electron-ion coulomb logs
     self.coulomb_log_ii = None # Ion-ion coulomb logs
@@ -72,7 +72,7 @@ class forest:
     self.electrons = electrons # Boolean switch for using electron properties
     self.Te = Te # Electron temperature
     self.ne = ne # Electron density
-    self.vthe = None # Electron thermal velocity
+    self.vthe = None # Electron RMS thermal velocity
     self.ompe = None # Electron plasma frequency
     self.dbyl = None # Debye length
     self.coulomb_log_ee = None # Electron-electron coulomb log

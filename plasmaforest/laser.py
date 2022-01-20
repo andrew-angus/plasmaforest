@@ -11,19 +11,30 @@ class laser_forest(wave_forest):
     super().__init__(*args,**kwargs)
     self.lambda0 = lambda0 # Laser wavelength
     self.I0 = I0 # Laser intensity
-    self.nc = None # Critical density
     self.om0 = None # Laser frequency
     self.kvac = None # Laser wavenumber in vacuum
     self.k0 = None # Laser wavenumber in plasma
-    self.ib = None # Inverse bremstrah
-    self.v_quiver = None # Quiver velocity
+    self.nc0 = None # Critical density
+    self.ri0 = None # Refractive index
+    self.ib = None # Inverse bremsstrahlung coefficient
+    self.E0 = None # E-field
+    self.v_quiv0 = None # Quiver velocity
 
-  # Need updated set_ndim, set_ions, set_electrons which clear additional attributes
+  # Update nullfications on core attribute set routines
+  def set_ndim(self,*args,**kwargs):
+    super().set_ndim(*args,**kwargs)
+  def set_electrons(self,*args,**kwargs):
+    super().set_electrons(*args,**kwargs)
+    self.k0 = None
+    self.ri0 = None
+  def set_ions(self,*args,**kwargs):
+    super().set_ions(*args,**kwargs)
 
   # Update intensity attribute
   def set_intensity(self,I0:floats):
     self.I0 = I0
-    # Nullify any intensity-dependent attributes
+    self.E0 = None # E-field
+    self.v_quiv = None # Quiver velocity
 
   # Calculate vacuum wavenumber
   def get_kvac(self):
@@ -41,15 +52,11 @@ class laser_forest(wave_forest):
       self.get_omega0()
     self.k0 = self.emw_dispersion(self.omega0,target='k')
 
-  # General EMW critical density
-  def emw_nc(self,omega):
-    return sc.epsilon_0*sc.m_e*sqr(omega/sc.e)
-  
   # Set laser critical density attribute
-  def get_nc(self):
+  def get_nc0(self):
     if self.omega0 is None:
       self.get_omega0()
-    self.nc = self.emw_nc(self.omega0)
+    self.nc0 = self.emw_nc(self.omega0)
 
   # Get collisional damping rate, private general method for inheritance
   def __collisional_damping__(self):
@@ -59,13 +66,20 @@ class laser_forest(wave_forest):
   def get_collisional_damping(self):
     pass
 
+  # Get phase velocity
+
+  # Get group velocity
+
+  # Get refractive index
+  def get_ri0(self):
+    if self.nc0 is None:
+      self.get_nc0()
+    self.ri0 = self.ri(self.nc0)
+
   # Get E field
 
   # Get quiver velocity
 
-  # Get phase velocity
-
-  # Get group velocity
 
 class srs_forest(laser_forest):
   def __init__(self,**kwargs):

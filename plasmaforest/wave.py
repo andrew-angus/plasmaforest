@@ -134,3 +134,12 @@ class wave_forest(forest):
     gamma = (2+self.ndim)/self.ndim
     prefac = gamma/self.ndim
     return prefac*sqr(self.vthe)*k/omega
+
+  # General EMW critical density
+  def emw_nc(self,omega:floats) -> floats:
+    return sc.epsilon_0*sc.m_e*sqr(omega/sc.e)
+  
+  # Refractive index function
+  def ri(self,nc:floats) -> floats:
+    self.electron_check()
+    return np.sqrt(1-self.ne/nc)

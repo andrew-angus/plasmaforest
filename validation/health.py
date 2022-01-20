@@ -30,7 +30,7 @@ birch = laser_forest(lambda0,I0,ndim,electrons=False,nion=0)
 # Get and verify laser vacuum parameters and critical density
 birch.get_kvac()
 birch.get_omega0()
-birch.get_nc()
+birch.get_nc0()
 kvactest = 2*np.pi/lambda0
 omega0test = sc.c*kvactest
 nctest = sc.epsilon_0*sc.m_e/sc.e**2*omega0test**2 # m/s
@@ -39,16 +39,18 @@ print(f'I_0 [W/m^2] = {I0:0.1e}')
 print(f'\lambda_0 [m] = {lambda0:0.3e}')
 print(f'k_vac [1/m] = {birch.kvac:0.3e}')
 print(f'\omega_0 [1/s] = {birch.omega0:0.3e}')
-print(f'n_c [1/m^3] = {birch.nc:0.3e}')
+print(f'n_c [1/m^3] = {birch.nc0:0.3e}')
 real_assert(birch.omega0,omega0test,1e12)
 real_assert(birch.kvac,kvactest,1e4)
-real_assert(birch.nc,nctest,1e23)
+real_assert(birch.nc0,nctest,1e23)
 
 # Specify electron properties
-ne = 0.1*birch.nc # plasma at 0.1 nc
+ne = 0.1*birch.nc0 # plasma at 0.1 nc
 TeeV = 3000 # eV
 Te = temperature_energy(TeeV,'eVtoK')
 birch.set_electrons(electrons=True,Te=Te,ne=ne)
+print('Te {K}: %0.1f; ne {1/m^3}: %0.3e' \
+    % (birch.Te,birch.ne))
 
 # Specify ion properties
 nion = 2
@@ -57,22 +59,12 @@ mi = np.array([1,4])*sc.m_p
 Ti = np.ones(int(nion))*Te/3
 ni = np.ones(int(nion))*ne/3
 birch.set_ions(nion=nion,Ti=Ti,ni=ni,Z=Z,mi=mi)
-
-# Get forest class instance and assert setup
-#birch = forest(Te=Te,ne=ne,ndim=ndim,nion=nion,Z=Z,Ti=Ti,ni=ni,mi=mi)
 np.set_printoptions(precision=3)
-print('Te {K}: %0.1f; ne {1/m^3}: %0.3e' \
-    % (birch.Te,birch.ne))
 print('Ti {K}: %0.1f; nion: %d' \
     % (birch.Ti[0],birch.nion))
 print('Ions: [H,He]; Z:',Z)
 print('ni {1/m^3}:',ni,'; mi {kg}:',mi)
-necheck = 9.049e26
-Techeck = 3000/8.617333262145e-5
-real_assert(birch.ne,necheck,1e23)
-real_assert(birch.Te,Techeck,1e4)
 
-## Calculate quantities and validate
 # Electron thermal velocity
 birch.get_vth(species='e')
 vthe_check = 22.97*1e-6*1e12
@@ -91,7 +83,7 @@ dbyl_check = 13.54e-9
 print('\lambda_D [m]: %0.3e' % (birch.dbyl))
 real_assert(birch.dbyl,dbyl_check,1e-11)
 
-# Coulomb logarithm
+# Electron-ion Coulomb logarithm
 birch.get_coulomb_log(species='ei')
 cl_check = 7.88
 print('\lambda_{ei}:',birch.coulomb_log_ei)
@@ -117,7 +109,7 @@ real_assert(om0,birch.omega0,1e12)
 res = birch.emw_dispersion_res(birch.omega0,birch.k0)
 real_assert(abs(res),0,1e-15)
 
-# EPW fluid dispersion
+# EPW fluid dispersion checks
 om1s = 2.086e15
 k1 = birch.bohm_gross(arg=om1s,target='k')
 print('k_{ek} [1/m]: %0.3e' % (k1)) 
@@ -127,12 +119,11 @@ real_assert(om1,om1s,1e12)
 res = birch.bohm_gross_res(om1,k1)
 real_assert(abs(res),0,1e-15)
 
+# Laser refractive index
+birch.get_ri0()
+print(f'Laser RI: {birch.ri0:0.3f}')
+real_assert(birch.ri0,np.sqrt(0.9),1e-3)
+
+
 # Final statement
 print('All health checks complete. What a happy forest.\n')
-
-## Funcions still not validated againtst known answers:
-# birch.get_coulomb_log(species=['ee','ii'])
-# birch.get_collision_freq(species=['ee','ii','ie'])
-# birch.get_vth(species='i')
-# birch.get_omp(species='i')
-# All EPW kinetic dispersion functions
