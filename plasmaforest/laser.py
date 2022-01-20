@@ -1,11 +1,12 @@
 #!/bin/python3
 from .core import *
+from .wave import *
 from typeguard import typechecked
 from typing import Optional, Union, Dict, TypedDict, Any
 
 # Laser-plasma forest with routines for laser specific quantities
 @typechecked
-class laser_forest(forest):
+class laser_forest(wave_forest):
   # Initialise using laser vacuum wavelength and intensity
   def __init__(self,lambda0:floats,I0:floats,*args,**kwargs):
     super().__init__(*args,**kwargs)
@@ -57,7 +58,13 @@ class laser_forest(forest):
   def get_collisional_damping(self):
     pass
 
+  # Get E field
+
   # Get quiver velocity
+
+  # Get phase velocity
+
+  # Get group velocity
 
 class srs_forest(laser_forest):
   def __init__(self,**kwargs):
