@@ -49,6 +49,8 @@ class forest:
     self.collision_freq_ei = None # Electron-ion collision frequencies
     self.collision_freq_ie = None # Ion-electron collision frequencies
     self.collision_freq_ii = None # Ion-ion collision frequencies
+    self.i_spacing = None # Inter-electron spacing
+    self.deBroglie_i = None # Ion thermal de Broglie wavelengths
 
     # Check nion >= 0
     if nion < 0:
@@ -78,6 +80,7 @@ class forest:
     self.coulomb_log_ee = None # Electron-electron coulomb log
     self.collision_freq_ee = None # Electron-electron collision frequency
     self.e_spacing = None # Inter-electron spacing
+    self.deBroglie_e = None # Electron thermal de Broglie wavelength
 
     # Check electron parameters specified correctly
     if electrons:
@@ -132,9 +135,26 @@ class forest:
     self.dbyl = dbyl.value
 
   # Get electron spacing
-  def get_e_spacing(self):
-    self.electron_check()
-    self.e_spacing = pwr(self.ne,-1/3)
+  def get_spacing(self,species:str):
+    if species == 'e':
+      self.electron_check()
+      self.e_spacing = pwr(self.ne,-1/3)
+    elif species == 'i':
+      self.ion_check()
+      self.i_spacing = pwr(self.ni,-1/3)
+    else:
+      raise Exception("species must be one of \'e\' or \'i\'.")
+
+  # Get thermal De Broglie wavelength
+  def get_deBroglie(self,species:str):
+    if species == 'e':
+      self.electron_check()
+      self.deBroglie_e = sc.h/np.sqrt(2*np.pi*sc.m_e*sc.k*self.Te)
+    elif species == 'i':
+      self.ion_check()
+      self.deBroglie_i = sc.h/np.sqrt(2*np.pi*self.mi*sc.k*self.Ti)
+    else:
+      raise Exception("species must be one of \'e\' or \'i\'.")
 
   # Get coulomb logaritms
   # Calculated using NRL formulary (which uses cgs units)
