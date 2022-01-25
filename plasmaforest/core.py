@@ -77,6 +77,7 @@ class forest:
     self.dbyl = None # Debye length
     self.coulomb_log_ee = None # Electron-electron coulomb log
     self.collision_freq_ee = None # Electron-electron collision frequency
+    self.e_spacing = None # Inter-electron spacing
 
     # Check electron parameters specified correctly
     if electrons:
@@ -129,6 +130,11 @@ class forest:
     ne = self.ne / u.m**3
     dbyl = pp.formulary.parameters.Debye_length(T_e=Te,n_e=ne)
     self.dbyl = dbyl.value
+
+  # Get electron spacing
+  def get_e_spacing(self):
+    self.electron_check()
+    self.e_spacing = pwr(self.ne,-1/3)
 
   # Get coulomb logaritms
   # Calculated using NRL formulary (which uses cgs units)
