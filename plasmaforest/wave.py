@@ -2,6 +2,7 @@
 
 import plasmapy as pp
 import astropy.units as u
+import astropy.constants as ac
 import scipy.constants as sc
 import numpy as np
 from typing import Union,Optional,Tuple
@@ -138,6 +139,19 @@ class wave_forest(forest):
   # General EMW critical density
   def emw_nc(self,omega:floats) -> floats:
     return sc.epsilon_0*sc.m_e*sqr(omega/sc.e)
+
+  # General EMW collisional damping rate
+  # Use Kruer Ch 5
+  def emw_damping(self,omega:floats) -> floats:
+    if self.ompe is None:
+      self.get_omp(species='e')
+    if self.vthe is None:
+      self.get_vth(species='e')
+    if self.dbyl is None:
+      self.get_dbyl()
+    impact = np.log(np.exp(self.coulomb_log_ei)/self.dbyl*(self.vthe/omega))
+    return sqr(self.ompe/omega)/(3*pwr(2*np.pi,3/2))*self.Z \
+        /(self.ne+np.sum(self.ni))*pwr(self.ompe/self.vthe,3)*self.ompe*impact
   
   # Refractive index function
   def emw_ri(self,nc:floats) -> floats:

@@ -23,6 +23,9 @@ class laser_forest(wave_forest):
     super().set_electrons(*args,**kwargs)
     self.k0 = None # Laser wavenumber in plasma
     self.ri0 = None # Refractive index
+    self.vp0 = None # Phase velocity
+    self.vg0 = None # Group velocity
+    self.B0 = None # B-field
   def set_ions(self,*args,**kwargs):
     super().set_ions(*args,**kwargs)
 
@@ -30,7 +33,7 @@ class laser_forest(wave_forest):
   def set_intensity(self,I0:floats):
     self.I0 = I0
     self.E0 = None # E-field
-    self.B0 = None # E-field
+    self.B0 = None # B-field
     self.vos0 = None # Quiver velocity
 
   # Calculate vacuum wavenumber
@@ -55,17 +58,27 @@ class laser_forest(wave_forest):
       self.get_omega0()
     self.nc0 = self.emw_nc(self.omega0)
 
-  # Get collisional damping rate, private general method for inheritance
-  def __collisional_damping__(self):
-    pass
-
   # Get laser collisional damping rate
-  def get_collisional_damping(self):
-    pass
+  def get_damping0(self):
+    if self.omega0 is None:
+      self.get_omega0()
+    self.damping0 = self.emw_damping(self.omega0)#self.vg0
 
   # Get phase velocity
+  def get_vp0(self):
+    if self.omega0 is None:
+      self.get_omega0()
+    if self.k0 is None:
+      self.get_k0()
+    self.vp0 = self.phase_velocity(self.omega0,self.k0)
 
   # Get group velocity
+  def get_vg0(self):
+    if self.omega0 is None:
+      self.get_omega0()
+    if self.k0 is None:
+      self.get_k0()
+    self.vg0 = self.emw_group_velocity(self.omega0,self.k0)
 
   # Get refractive index
   def get_ri0(self):
@@ -80,12 +93,10 @@ class laser_forest(wave_forest):
     self.E0 = self.emw_E(self.I0,self.ri0)
 
   # Get B field
-  """
   def get_B0(self):
     if self.vp0 is None:
       self.get_vp0()
-    self.B0 = self.emw_E(self.I0,self.vp0)
-  """
+    self.B0 = self.emw_B(self.I0,self.vp0)
 
   # Get quiver velocity
   def get_vos0(self):

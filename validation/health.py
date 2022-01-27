@@ -78,7 +78,12 @@ real_assert(birch.ompe,1.697*1e15,1e12)
 # Debye length
 birch.get_dbyl()
 print('\lambda_D [m]: %0.3e' % (birch.dbyl))
-real_assert(birch.dbyl,13.54e-9,1e-11)
+real_assert(birch.dbyl,13.54e-9,1e-8)
+
+# Electron spacing and De Broglie wavelength
+birch.get_spacing(species='e')
+print('e_spacing [m]: %0.3e' % (birch.e_spacing))
+real_assert(birch.e_spacing,1.03e-9,1e-11)
 
 # Electron-ion Coulomb logarithm
 birch.get_coulomb_log(species='ei')
@@ -127,6 +132,22 @@ real_assert(birch.E0,0.126*1e12,1e8)
 birch.get_vos0()
 print(f'v_os,0 [m/s]: {birch.vos0:0.3e}')
 real_assert(birch.vos0,4.023*1e-6*1e12/np.sqrt(birch.ri0),1e3)
+
+# Laser phase velocity
+birch.get_vp0()
+print(f'v_p,0 [m/s]: {birch.vp0:0.3e}')
+real_assert(birch.vp0,316*1e-6*1e12,1e5)
+
+# Laser group velocity
+birch.get_vg0()
+print(f'v_g,0 [m/s]: {birch.vg0:0.3e}')
+real_assert(birch.vg0,284*1e-6*1e12,1e6)
+
+# Laser collisional damping
+birch.get_damping0()
+print('\\nu_0 [1/s]:', birch.damping0/2)
+print(f'\\nu_0,tot [1/s]: {np.sum(birch.damping0)/2:0.3e}')
+real_assert(np.sum(birch.damping0)/2,1.051e10,1e9)
 
 # Final statement
 print('All health checks complete. What a happy forest.\n')
