@@ -14,11 +14,11 @@ class laser_forest(wave_forest):
     self.om0 = None # Laser frequency
     self.kvac = None # Laser wavenumber in vacuum
     self.nc0 = None # Critical density
-    self.ib = None # Inverse bremsstrahlung coefficient
 
   # Update nullfications on core attribute set routines
   def set_ndim(self,*args,**kwargs):
     super().set_ndim(*args,**kwargs)
+    self.damping0 = None # Collisional damping rate
   def set_electrons(self,*args,**kwargs):
     super().set_electrons(*args,**kwargs)
     self.k0 = None # Laser wavenumber in plasma
@@ -26,8 +26,10 @@ class laser_forest(wave_forest):
     self.vp0 = None # Phase velocity
     self.vg0 = None # Group velocity
     self.B0 = None # B-field
+    self.damping0 = None # Collisional damping rate
   def set_ions(self,*args,**kwargs):
     super().set_ions(*args,**kwargs)
+    self.damping0 = None # Collisional damping rate
 
   # Update intensity attribute
   def set_intensity(self,I0:floats):
@@ -62,7 +64,7 @@ class laser_forest(wave_forest):
   def get_damping0(self):
     if self.omega0 is None:
       self.get_omega0()
-    self.damping0 = self.emw_damping(self.omega0)#self.vg0
+    self.damping0 = self.emw_damping(self.omega0)
 
   # Get phase velocity
   def get_vp0(self):

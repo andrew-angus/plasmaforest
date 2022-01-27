@@ -44,6 +44,7 @@ class forest:
     self.mi = mi # Ion masses
     self.vthi = None # Ion RMS thermal velocities
     self.ompi = None # Ion plasma frequencies
+    self.dbyl = None # Debye length
     self.coulomb_log_ei = None # Electron-ion coulomb logs
     self.coulomb_log_ii = None # Ion-ion coulomb logs
     self.collision_freq_ei = None # Electron-ion collision frequencies
