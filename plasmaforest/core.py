@@ -129,10 +129,11 @@ class forest:
   # Get Debye length
   def get_dbyl(self):
     self.electron_check()
-    Te = self.Te * u.K
-    ne = self.ne / u.m**3
-    dbyl = pp.formulary.parameters.Debye_length(T_e=Te,n_e=ne)
-    self.dbyl = dbyl.value
+    cons = sc.epsilon_0*sc.k/sqr(sc.e)
+    dbyl = self.ne/self.Te
+    if self.nion > 0:
+      dbyl += np.sum((sqr(self.Z)*self.ni)/self.Ti)
+    self.dbyl = np.sqrt(cons/dbyl)
 
   # Get electron spacing
   def get_spacing(self,species:str):
