@@ -153,7 +153,7 @@ class wave_forest(forest):
       self.get_coulomb_log(species='ei')
     impact = np.log(np.exp(self.coulomb_log_ei)/self.dbyl*(self.vthe/omega))
     return sqr(self.ompe/omega)/(3*pwr(2*np.pi,3/2))*self.Z \
-        /(self.ne+np.sum(self.ni))*pwr(self.ompe/self.vthe,3)*self.ompe*impact
+        /(self.ne+np.sum(self.ni))*pwr(self.ompe/self.vthe,3)*self.ompe*impact/2
   
   # Refractive index function
   def emw_ri(self,nc:floats) -> floats:
@@ -200,8 +200,6 @@ class wave_forest(forest):
     else:
       logfac = np.log(2*mecgs*pwr(vthecgs,3)/(sqr(ecgs)*self.ompe))-1.077-G
     
-    #A = 16*np.pi/3*np.sqrt(2*np.pi)*pwr(ecgs,6)*sqr(self.Z)*necgs*nicgs\
-    #    /pwr(mecgs*vthecgs*omega,3)*(self.coulomb_log_ei)
     A = 16*np.pi/3*np.sqrt(2*np.pi)*pwr(ecgs,6)*sqr(self.Z)*necgs*nicgs\
         /pwr(mecgs*vthecgs*omega,3)*logfac
     

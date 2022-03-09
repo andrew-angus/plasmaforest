@@ -147,12 +147,18 @@ real_assert(birch.vg0,284*1e-6*1e12,1e6)
 
 # Laser collisional damping
 birch.get_damping0()
-print('\\nu_0 [1/s]:', birch.damping0/2)
-print(f'\\nu_0,tot [1/s]: {np.sum(birch.damping0)/2:0.3e}')
-real_assert(np.sum(birch.damping0)/2,1.051e10,1e9)
+print('\\nu_0 [1/s]:', birch.damping0)
+print(f'\\nu_0,tot [1/s]: {np.sum(birch.damping0):0.3e}')
+real_assert(np.sum(birch.damping0),1.051e10,1e9)
+
+# Raman collisional damping
+birch.get_damping1()
+print('\\nu_1 [1/s]:', birch.damping1)
+print(f'\\nu_1,tot [1/s]: {np.sum(birch.damping1):0.3e}')
+real_assert(np.sum(birch.damping1),2.813e10,2e9)
 
 # SRS fluid resonance matching
-birch.fluid_matching()
+birch.resonance_solve()
 print(f'fluid \\omega_1 [1/s]: {birch.omega1:0.3e}')
 print(f'fluid \\omega_2 [1/s]: {birch.omega2:0.3e}')
 print(f'fluid k_1 [1/m]: {birch.k1:0.3e}')
