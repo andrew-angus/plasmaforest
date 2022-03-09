@@ -10,6 +10,7 @@
 from plasmaforest.core import *
 from plasmaforest.wave import *
 from plasmaforest.laser import *
+from plasmaforest.srs import *
 import scipy.constants as sc
 import numpy as np
 import astropy.units as u
@@ -25,7 +26,7 @@ lambda0 = 351.0e-9 # m
 I0 = 2e19 # W/m^2
 
 # Laser forest instance initially without plasma parameter specification
-birch = laser_forest(lambda0,I0,ndim,electrons=False,nion=0)
+birch = srs_forest(lambda0,I0,ndim,electrons=False,nion=0)
 
 # Get and verify laser vacuum parameters and critical density
 birch.get_kvac()
@@ -67,12 +68,12 @@ print('ni [1/m^3]:',ni,'; mi {kg}:',mi)
 
 # Electron thermal velocity
 birch.get_vth(species='e')
-print('v_th,e [m/s]: %0.3e' % (birch.vthe))
+print('v_the [m/s]: %0.3e' % (birch.vthe))
 real_assert(birch.vthe,22.97*1e-6*1e12,1e4)
 
 # Electron plasma frequency
 birch.get_omp(species='e')
-print('\omega_p,e [1/s]: %0.3e' % (birch.ompe))
+print('\omega_pe [1/s]: %0.3e' % (birch.ompe))
 real_assert(birch.ompe,1.697*1e15,1e12)
 
 # Debye length
@@ -109,13 +110,13 @@ res = birch.emw_dispersion_res(birch.omega0,birch.k0)
 real_assert(abs(res),0,1e-15)
 
 # EPW fluid dispersion checks
-om1s = 2.086e15
-k1 = birch.bohm_gross(arg=om1s,target='k')
-print('k_ek [1/m]: %0.3e' % (k1)) 
-om1 = birch.bohm_gross(arg=k1,target='omega')
-print('\omega_ek [1/s]: %0.3e' % (om1)) 
-real_assert(om1,om1s,1e12)
-res = birch.bohm_gross_res(om1,k1)
+om2s = 2.086e15
+k2 = birch.bohm_gross(arg=om2s,target='k')
+print('k_2 [1/m]: %0.3e' % (k2)) 
+om2 = birch.bohm_gross(arg=k2,target='omega')
+print('\omega_2 [1/s]: %0.3e' % (om2)) 
+real_assert(om2,om2s,1e12)
+res = birch.bohm_gross_res(om2,k2)
 real_assert(abs(res),0,1e-15)
 
 # Laser refractive index
@@ -148,6 +149,14 @@ birch.get_damping0()
 print('\\nu_0 [1/s]:', birch.damping0/2)
 print(f'\\nu_0,tot [1/s]: {np.sum(birch.damping0)/2:0.3e}')
 real_assert(np.sum(birch.damping0)/2,1.051e10,1e9)
+
+# SRS fluid resonance matching
+birch.fluid_matching()
+print(f'fluid \\omega_1 [1/s]: {birch.omega1:0.3e}')
+print(f'fluid \\omega_2 [1/s]: {birch.omega2:0.3e}')
+print(f'fluid k_1 [1/m]: {birch.k1:0.3e}')
+print(f'fluid k_2 [1/m]: {birch.k2:0.3e}')
+assert(birch.emw_dispersion_res(birch.omega1,birch.k1) < 1e14)
 
 # Final statement
 print('All health checks complete. What a happy forest.\n')

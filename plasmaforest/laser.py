@@ -11,7 +11,7 @@ class laser_forest(wave_forest):
     super().__init__(*args,**kwargs)
     self.lambda0 = lambda0 # Laser wavelength
     self.set_intensity(I0)
-    self.om0 = None # Laser frequency
+    self.omega0 = None # Laser frequency
     self.kvac = None # Laser wavenumber in vacuum
     self.nc0 = None # Critical density
 
@@ -107,13 +107,3 @@ class laser_forest(wave_forest):
     if self.E0 is None:
       self.get_E0()
     self.vos0 = self.emw_vos(self.E0,self.omega0)
-
-class srs_forest(laser_forest):
-  def __init__(self,**kwargs):
-    super().__init__(**kwargs)
-
-# Dimensionless unit conversion class
-# Normalisation based on laser wavelength in vacuum
-class units:
-  def __init__(self,**kwargs):
-    super().__init__(**kwargs)
