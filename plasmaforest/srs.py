@@ -23,6 +23,24 @@ class srs_forest(laser_forest):
     self.omega2 = None # EPW frequency
     self.k2 = None # EPW wavenumber
 
+  # Update nullfications on inherited set routines
+  def set_ndim(self,*args,**kwargs):
+    super().set_ndim(*args,**kwargs)
+    self.omega1 = None
+    self.k1 = None
+    self.omega2 = None
+    self.k2 = None
+  def set_electrons(self,*args,**kwargs):
+    super().set_electrons(*args,**kwargs)
+    self.omega1 = None
+    self.k1 = None
+    self.omega2 = None
+    self.k2 = None
+  def set_ions(self,*args,**kwargs):
+    super().set_ions(*args,**kwargs)
+  def set_intensity(self,*args,**kwargs):
+    super().set_intensity(*args,**kwargs)
+
   # Get matching wavenumbers and frequencies by fluid dispersion
   def fluid_matching(self):
     # Check omega0 and k0 already set
@@ -31,18 +49,16 @@ class srs_forest(laser_forest):
     if self.k0 is None:
       self.get_k0()
 
-    # Raman dispersion residual
-    def bsrs(k2):
-      omega_ek = self.bohm_gross(k2,target='omega')
-      return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
-
-    # Solve for raman wavenumber
-    self.k2 = bisect(bsrs,self.k0,2*self.k0) # Look between k0 and 2k0
-    
-    # Set other unknowns using solution
+    # Solve for EPW wavenumber and set other unknowns
+    self.k2 = bisect(self.__bsrs__,self.k0,2*self.k0) # Look between k0 and 2k0
     self.omega2 = self.bohm_gross(self.k2,target='omega')
     self.k1 = self.k0 - self.k2
     self.omega1 = self.omega0 - self.omega2
+
+  # Raman dispersion residual from k2
+  def __bsrs__(self,k2):
+    omega_ek = self.bohm_gross(k2,target='omega')
+    return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
 
   # Get matching wavenumbers/frequencies by kinetic dispersion
 
