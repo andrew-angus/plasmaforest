@@ -149,6 +149,8 @@ class wave_forest(forest):
       self.get_vth(species='e')
     if self.dbyl is None:
       self.get_dbyl()
+    if self.coulomb_log_ei is None:
+      self.get_coulomb_log(species='ei')
     impact = np.log(np.exp(self.coulomb_log_ei)/self.dbyl*(self.vthe/omega))
     return sqr(self.ompe/omega)/(3*pwr(2*np.pi,3/2))*self.Z \
         /(self.ne+np.sum(self.ni))*pwr(self.ompe/self.vthe,3)*self.ompe*impact
@@ -169,3 +171,38 @@ class wave_forest(forest):
   # EMW electron quiver velocity
   def emw_vos(self,E:floats,omega:floats) -> floats:
     return sc.e*E/(sc.m_e*omega)
+
+  # EPW collisional damping
+  # Calculated according to Rand - Collision Damping of Electron Plasma Waves (1965)
+  def epw_coll_damping(self,omega:floats) -> floats:
+    # Check for attributes
+    if self.coulomb_log_ei is None:
+      self.get_coulomb_log(species='ei')
+    if self.vthe is None:
+      self.get_vth(species='e')
+    if self.ompe is None:
+      self.get_omp(species='e')
+
+    # Calculate in cgs units
+    ecgs = ac.e.gauss.value
+    hbarcgs = ac.hbar.cgs.value
+    necgs = (self.ne/u.m**3).cgs.value
+    nicgs = (self.ni/u.m**3).cgs.value
+    mecgs = (sc.m_e*u.kg).cgs.value
+    vthecgs = (self.vthe*u.m/u.s).cgs.value
+
+    # Calculate switch quantities
+    omrat = omega/self.ompe
+    G = 0.27*omrat-0.091
+    regime = sqr(ecgs)/(hbarcgs*vthecgs)
+    if regime < 1:
+      logfac = np.log(2*mecgs*sqr(vthecgs)/(hbarcgs*self.ompe))-0.442-G
+    else:
+      logfac = np.log(2*mecgs*pwr(vthecgs,3)/(sqr(ecgs)*self.ompe))-1.077-G
+    
+    #A = 16*np.pi/3*np.sqrt(2*np.pi)*pwr(ecgs,6)*sqr(self.Z)*necgs*nicgs\
+    #    /pwr(mecgs*vthecgs*omega,3)*(self.coulomb_log_ei)
+    A = 16*np.pi/3*np.sqrt(2*np.pi)*pwr(ecgs,6)*sqr(self.Z)*necgs*nicgs\
+        /pwr(mecgs*vthecgs*omega,3)*logfac
+    
+    return 0.5*A*self.ompe

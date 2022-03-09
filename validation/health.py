@@ -21,12 +21,13 @@ import warnings
 warnings.filterwarnings("ignore", category=RelativityWarning)
 
 # Setup case
+mode = 'fluid'
 ndim = 1 # 1D case
 lambda0 = 351.0e-9 # m
 I0 = 2e19 # W/m^2
 
 # Laser forest instance initially without plasma parameter specification
-birch = srs_forest(lambda0,I0,ndim,electrons=False,nion=0)
+birch = srs_forest(mode,lambda0,I0,ndim,electrons=False,nion=0)
 
 # Get and verify laser vacuum parameters and critical density
 birch.get_kvac()
@@ -157,6 +158,12 @@ print(f'fluid \\omega_2 [1/s]: {birch.omega2:0.3e}')
 print(f'fluid k_1 [1/m]: {birch.k1:0.3e}')
 print(f'fluid k_2 [1/m]: {birch.k2:0.3e}')
 assert(birch.emw_dispersion_res(birch.omega1,birch.k1) < 1e14)
+
+# EPW collisional damping 
+birch.get_cdamping2()
+print(f'\\nu_2c [1/s]: {birch.cdamping2}')
+print(f'\\nu_2c,tot [1/s]: {np.sum(birch.cdamping2):0.3e}')
+real_assert(np.sum(birch.cdamping2),5e10,4e10)
 
 # Final statement
 print('All health checks complete. What a happy forest.\n')

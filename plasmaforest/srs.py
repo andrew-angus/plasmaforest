@@ -16,12 +16,32 @@ from scipy.optimize import bisect
 # Currently direct backscatter only
 @typechecked
 class srs_forest(laser_forest):
-  def __init__(self,*args,**kwargs):
+  def __init__(self,mode:str,*args,**kwargs):
     super().__init__(*args,**kwargs)
     self.omega1 = None # Raman frequency
     self.k1 = None # Raman wavenumber
     self.omega2 = None # EPW frequency
     self.k2 = None # EPW wavenumber
+    self.cdamping2 = None # EPW collisonal damping
+    self.ldamping2 = None # EPW Landau damping
+    self.__mode_check__(mode)
+
+  # Check mode
+  def __mode_check__(self,mode:str):
+    if mode not in ['fluid','kinetic']:
+      raise Exception('Mode argument must be one of \'fluid\' or \'kinetic\'')
+    else:
+      self.mode = mode
+
+  # Set mode routine with nullifications
+  def set_mode(self,mode:str):
+    self.__mode_check__(mode)
+    self.omega1 = None
+    self.k1 = None
+    self.omega2 = None
+    self.k2 = None
+    self.cdamping2 = None
+    self.ldamping2 = None
 
   # Update nullfications on inherited set routines
   def set_ndim(self,*args,**kwargs):
@@ -30,14 +50,20 @@ class srs_forest(laser_forest):
     self.k1 = None
     self.omega2 = None
     self.k2 = None
+    self.cdamping2 = None
+    self.ldamping2 = None
   def set_electrons(self,*args,**kwargs):
     super().set_electrons(*args,**kwargs)
     self.omega1 = None
     self.k1 = None
     self.omega2 = None
     self.k2 = None
+    self.cdamping2 = None
+    self.ldamping2 = None
   def set_ions(self,*args,**kwargs):
     super().set_ions(*args,**kwargs)
+    self.cdamping2 = None
+    self.ldamping2 = None
   def set_intensity(self,*args,**kwargs):
     super().set_intensity(*args,**kwargs)
 
@@ -59,6 +85,16 @@ class srs_forest(laser_forest):
   def __bsrs__(self,k2):
     omega_ek = self.bohm_gross(k2,target='omega')
     return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
+
+  # EPW collisional damping
+  # Calculated according to Rand - Collision Damping of Electron Plasma Waves (1965)
+  def get_cdamping2(self):
+    if self.omega2 is None:
+      if mode == 'fluid':
+        self.fluid_matching()
+      else:
+        raise Exception('Kinetic resonance matching not implemented')
+    self.cdamping2 = self.epw_coll_damping(self.omega2)
 
   # Get matching wavenumbers/frequencies by kinetic dispersion
 
