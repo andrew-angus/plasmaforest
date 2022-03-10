@@ -70,7 +70,7 @@ print('ni [1/m^3]:',ni,'; mi {kg}:',mi)
 # Electron thermal velocity
 birch.get_vth(species='e')
 print('v_the [m/s]: %0.3e' % (birch.vthe))
-real_assert(birch.vthe,22.97*1e-6*1e12,1e4)
+real_assert(birch.vthe/np.sqrt(2),22.97*1e-6*1e12,1e4)
 
 # Electron plasma frequency
 birch.get_omp(species='e')
@@ -170,6 +170,11 @@ birch.get_cdamping2()
 print(f'\\nu_2c [1/s]: {birch.cdamping2}')
 print(f'\\nu_2c,tot [1/s]: {np.sum(birch.cdamping2):0.3e}')
 real_assert(np.sum(birch.cdamping2),5e10,4e10)
+
+# EPW collisional damping 
+birch.get_ldamping2()
+print(f'fluid \\nu_2l [1/s]: {birch.ldamping2:0.3e}')
+real_assert(birch.ldamping2,64.47e12,2e13)
 
 # Final statement
 print('All health checks complete. What a happy forest.\n')

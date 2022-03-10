@@ -102,7 +102,6 @@ class srs_forest(laser_forest):
     else:
       raise Exception('Kinetic resonance solving not implemented')
 
-
   # Raman dispersion residual from k2
   def __bsrs__(self,k2):
     omega_ek = self.bohm_gross(k2,target='omega')
@@ -115,9 +114,13 @@ class srs_forest(laser_forest):
     self.damping1 = self.emw_damping(self.omega1)
 
   # EPW collisional damping
-  # Calculated according to Rand - Collision Damping of Electron Plasma Waves (1965)
   def get_cdamping2(self):
     if self.omega2 is None:
       self.resonance_solve()
     self.cdamping2 = self.epw_coll_damping(self.omega2)
 
+  # EPW Landau damping
+  def get_ldamping2(self):
+    if self.omega2 is None or self.k2 is None:
+      self.resonance_solve()
+    self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2)

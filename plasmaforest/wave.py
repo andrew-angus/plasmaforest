@@ -46,7 +46,7 @@ class wave_forest(forest):
     if self.vthe is None:
       self.get_vth(species='e')
     gamma = (2+self.ndim)/self.ndim
-    prefac = gamma/self.ndim
+    prefac = 0.5*gamma
     if target == 'omega':
       return np.sqrt(sqr(self.ompe) + prefac*sqr(self.vthe*arg))
     elif target == 'k':
@@ -62,8 +62,8 @@ class wave_forest(forest):
     if self.vthe is None:
       self.get_vth(species='e')
     gamma = (2+self.ndim)/self.ndim
-    prefac = gamma/self.ndim
-    return (-sqr(omega)+prefac*sqr(self.vthe*k))/sqr(self.ompe)+1.0
+    prefac = np.sqrt(0.5*gamma)
+    return -sqr(omega/self.ompe)+sqr(prefac*self.vthe*k/self.ompe)+1.0
 
   # Plasma dispersion function
   def Zfun(self,omega:flomplex,k:flomplex,species:str) -> flomplex:
@@ -82,14 +82,14 @@ class wave_forest(forest):
     if species == 'e':
       if self.vthe is None:
         self.get_vth(species='e')
-      a = self.vthe*np.sqrt(2/self.ndim)
+      a = self.vthe
     elif species == 'i':
       if self.vthi is None:
         self.get_vth(species='i')
-      a = self.vthi*np.sqrt(2/self.ndim)
+      a = self.vthi
     else:
       raise Exception("species must be one of \'e\' or \'i\'.")
-    return omega/k/a
+    return omega/(k*a)
 
   # Plasma susceptibility calculated with the plasma dispersion function
   def susceptibility(self,omega:flomplex,k:flomplex,species:str) -> flomplex: 
@@ -99,7 +99,7 @@ class wave_forest(forest):
         self.get_vth(species='e')
       if self.ompe is None:
         self.get_omp(species='e')
-      a = self.vthe*np.sqrt(2/self.ndim)
+      a = self.vthe
       omp = self.ompe
     elif species == 'i':
       if self.vthi is None:
@@ -107,7 +107,7 @@ class wave_forest(forest):
       if self.ompi is None:
         self.get_omp(species='i')
       omp = self.ompi
-      a = self.vthi*np.sqrt(2/self.ndim)
+      a = self.vthi
     else:
       raise Exception("species must be one of \'e\' or \'i\'.")
       
@@ -133,7 +133,7 @@ class wave_forest(forest):
     if self.vthe is None:
       self.get_vth(species='e')
     gamma = (2+self.ndim)/self.ndim
-    prefac = gamma/self.ndim
+    prefac = 0.5*gamma
     return prefac*sqr(self.vthe)*k/omega
 
   # General EMW critical density
@@ -151,9 +151,10 @@ class wave_forest(forest):
       self.get_dbyl()
     if self.coulomb_log_ei is None:
       self.get_coulomb_log(species='ei')
-    impact = np.log(np.exp(self.coulomb_log_ei)/self.dbyl*(self.vthe/omega))
+    vth1Drms = self.vthe/np.sqrt(2)
+    impact = np.log(np.exp(self.coulomb_log_ei)/self.dbye*(vth1Drms/omega))
     return sqr(self.ompe/omega)/(3*pwr(2*np.pi,3/2))*self.Z \
-        /(self.ne+np.sum(self.ni))*pwr(self.ompe/self.vthe,3)*self.ompe*impact/2
+        /(self.ne+np.sum(self.ni))*pwr(self.ompe/vth1Drms,3)*self.ompe*impact/2
   
   # Refractive index function
   def emw_ri(self,nc:floats) -> floats:
@@ -189,7 +190,7 @@ class wave_forest(forest):
     necgs = (self.ne/u.m**3).cgs.value
     nicgs = (self.ni/u.m**3).cgs.value
     mecgs = (sc.m_e*u.kg).cgs.value
-    vthecgs = (self.vthe*u.m/u.s).cgs.value
+    vthecgs = (self.vthe/np.sqrt(2)*u.m/u.s).cgs.value
 
     # Calculate switch quantities
     omrat = omega/self.ompe
@@ -204,3 +205,28 @@ class wave_forest(forest):
         /pwr(mecgs*vthecgs*omega,3)*logfac
     
     return 0.5*A*self.ompe
+
+  # First order approximation of landau damping
+  # Calculated according to Swanson - Plasma Waves (2012)
+  def epw_landau_damping(self,omega:floats,k:floats) -> floats:
+    if self.ompe is None:
+      self.get_omp(species='e')
+    if self.vthe is None:
+      self.get_vth(species='e')
+
+    """
+    vthe1d = self.vthe/np.sqrt(2)
+    dk = k*vthe1d/self.ompe
+    gamma = np.sqrt(np.pi/8)*omega/pwr(dk,3)\
+        *np.exp(-0.5*sqr(omega/(k*vthe1d))) # calc_inputs
+    print(f'{gamma:0.3e}')
+    dk = k*vthe1d/omega
+    omega2 = omega*(1+3/2*sqr(dk))
+    print(self.ompe,omega,omega2)
+    gamma = np.sqrt(np.pi/8)*omega2/pwr(dk,3)\
+        *np.exp(-0.5*sqr(omega2/(k*vthe1d))) # lpse
+    print(f'{gamma:0.3e}')
+    """
+    gamma = np.sqrt(np.pi)*sqr(self.ompe*omega)/pwr(k*self.vthe,3)\
+        *np.exp(-sqr(omega/(k*self.vthe)))/2
+    return gamma

@@ -30,8 +30,6 @@ class forest:
   # Set number of dimensions and null dimension-dependent properties
   def set_ndim(self,ndim:int):
     self.ndim = ndim # Plasma dimensionality
-    self.vthe = None # Electron RMS thermal velocity
-    self.vthi = None # Ion RMS thermal velocity
 
   # Set ion properties and null any ion-dependent properties
   def set_ions(self,nion:int,Ti:Optional[np.ndarray]=None,\
@@ -42,7 +40,7 @@ class forest:
     self.Ti = Ti # Ion temperatures
     self.ni = ni # Ion densities
     self.mi = mi # Ion masses
-    self.vthi = None # Ion RMS thermal velocities
+    self.vthi = None # Ion most probable thermal velocities
     self.ompi = None # Ion plasma frequencies
     self.dbyl = None # Debye length
     self.coulomb_log_ei = None # Electron-ion coulomb logs
@@ -75,7 +73,7 @@ class forest:
     self.electrons = electrons # Boolean switch for using electron properties
     self.Te = Te # Electron temperature
     self.ne = ne # Electron density
-    self.vthe = None # Electron RMS thermal velocity
+    self.vthe = None # Electron most probable thermal velocity
     self.ompe = None # Electron plasma frequency
     self.dbye = None # Electron-only Debye length
     self.dbyl = None # Debye length
@@ -101,17 +99,14 @@ class forest:
     if not self.electrons:
       raise Exception('no electron parameters specified, use set_electrons method.')
 
-  # Get RMS thermal velocity
+  # Get most probable 3D (realistic) thermal velocity
   def get_vth(self,species:str):
     if species == 'e':
       self.electron_check()
-      Te = self.Te * u.K
-      vthe = pp.formulary.parameters.thermal_speed(T=Te,particle='e-',\
-          ndim=self.ndim,method='rms')
-      self.vthe = vthe.value
+      self.vthe = np.sqrt(2*self.Te*sc.k/sc.m_e)
     elif species == 'i':
       self.ion_check()
-      self.vthi = np.sqrt(self.ndim*self.Te*sc.k/self.mi)
+      self.vthi = np.sqrt(2*self.Ti*sc.k/self.mi)
     else:
       raise Exception("species must be one of \'e\' or \'i\'.")
 
