@@ -16,16 +16,10 @@ from scipy.optimize import bisect
 # Currently direct backscatter only
 @typechecked
 class srs_forest(laser_forest):
-  def __init__(self,mode:str,*args,**kwargs):
+  def __init__(self,mode:str,relativistic:bool,*args,**kwargs):
     super().__init__(*args,**kwargs)
-    self.omega1 = None # Raman frequency
-    self.k1 = None # Raman wavenumber
-    self.omega2 = None # EPW frequency
-    self.k2 = None # EPW wavenumber
-    self.damping1 = None # Raman collisonal damping
-    self.cdamping2 = None # EPW collisonal damping
-    self.ldamping2 = None # EPW Landau damping
-    self.__mode_check__(mode)
+    self.set_mode(mode)
+    self.set_relativistic(relativistic)
 
   # Check mode
   def __mode_check__(self,mode:str):
@@ -43,6 +37,10 @@ class srs_forest(laser_forest):
     self.k2 = None
     self.damping1 = None
     self.cdamping2 = None
+    self.ldamping2 = None
+
+  def set_relativistic(self,relativistic:bool):
+    self.relativistic = relativistic
     self.ldamping2 = None
 
   # Update nullfications on inherited set routines
@@ -123,4 +121,4 @@ class srs_forest(laser_forest):
   def get_ldamping2(self):
     if self.omega2 is None or self.k2 is None:
       self.resonance_solve()
-    self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2)
+    self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,self.relativistic)

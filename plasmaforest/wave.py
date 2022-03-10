@@ -206,27 +206,37 @@ class wave_forest(forest):
     
     return 0.5*A*self.ompe
 
-  # First order approximation of landau damping
-  # Calculated according to Swanson - Plasma Waves (2012)
-  def epw_landau_damping(self,omega:floats,k:floats) -> floats:
+  def epw_landau_damping(self,omega:floats,k:floats,relativistic:Optional[bool]=False) -> floats:
     if self.ompe is None:
       self.get_omp(species='e')
     if self.vthe is None:
       self.get_vth(species='e')
 
-    """
-    vthe1d = self.vthe/np.sqrt(2)
-    dk = k*vthe1d/self.ompe
-    gamma = np.sqrt(np.pi/8)*omega/pwr(dk,3)\
-        *np.exp(-0.5*sqr(omega/(k*vthe1d))) # calc_inputs
-    print(f'{gamma:0.3e}')
-    dk = k*vthe1d/omega
-    omega2 = omega*(1+3/2*sqr(dk))
-    print(self.ompe,omega,omega2)
-    gamma = np.sqrt(np.pi/8)*omega2/pwr(dk,3)\
-        *np.exp(-0.5*sqr(omega2/(k*vthe1d))) # lpse
-    print(f'{gamma:0.3e}')
-    """
-    gamma = np.sqrt(np.pi)*sqr(self.ompe*omega)/pwr(k*self.vthe,3)\
-        *np.exp(-sqr(omega/(k*self.vthe)))/2
+    # Relativistic calc of Landau damping according to:
+    # Bers - Relativistic Landau damping of electron plasma waves 
+    # in stimulated Raman scattering (2009)
+    if relativistic:
+      vth = self.vthe/np.sqrt(2)
+      mu = sqr(sc.c/vth)
+      N = sc.c*k/omega
+      kdb = k*self.dbye
+      z0 = mu*np.abs(N)/np.sqrt(sqr(N)-1)
+      gamma = np.sqrt(np.pi/8)*omega*pwr(mu,3/2)*np.exp(mu*(1-N/np.sqrt(sqr(N)-1)))\
+          /(np.abs(N)*(sqr(N)-1))*(1+2/z0+2/sqr(z0))/(1+6*sqr(kdb)-5/(2*mu))
+
+    # First order approximation of non-relativistic landau damping
+    # Calculated according to Swanson - Plasma Waves (2012)
+    else:
+      """
+      vthe1d = self.vthe/np.sqrt(2)
+      dk = k*vthe1d/omega
+      omega2 = omega*(1+3/2*sqr(dk))
+      print(self.ompe,omega,omega2)
+      gamma = np.sqrt(np.pi/8)*omega2/pwr(dk,3)\
+          *np.exp(-0.5*sqr(omega2/(k*vthe1d))) # lpse
+      print(f'{gamma:0.3e}')
+      """
+      gamma = np.sqrt(np.pi)*sqr(self.ompe*omega)/pwr(k*self.vthe,3)\
+          *np.exp(-sqr(omega/(k*self.vthe)))/2
+
     return gamma
