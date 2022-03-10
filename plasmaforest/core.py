@@ -77,6 +77,7 @@ class forest:
     self.ne = ne # Electron density
     self.vthe = None # Electron RMS thermal velocity
     self.ompe = None # Electron plasma frequency
+    self.dbye = None # Electron-only Debye length
     self.dbyl = None # Debye length
     self.coulomb_log_ee = None # Electron-electron coulomb log
     self.collision_freq_ee = None # Electron-electron collision frequency
@@ -132,6 +133,7 @@ class forest:
     self.electron_check()
     cons = sc.epsilon_0*sc.k/sqr(sc.e)
     dbyl = self.ne/self.Te
+    self.dbye = np.sqrt(cons/dbyl)
     if self.nion > 0:
       dbyl += np.sum((sqr(self.Z)*self.ni)/self.Ti)
     self.dbyl = np.sqrt(cons/dbyl)
