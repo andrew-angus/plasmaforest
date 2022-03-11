@@ -85,24 +85,36 @@ class srs_forest(laser_forest):
 
   # Get matching wavenumbers and frequencies by either fluid or kinetic dispersion
   def resonance_solve(self):
-    if self.mode == 'fluid':
-      # Check omega0 and k0 already set
-      if self.omega0 is None:
-        self.get_omega0()
-      if self.k0 is None:
-        self.get_k0()
+    # Check omega0 and k0 already set
+    if self.omega0 is None:
+      self.get_omega0()
+    if self.k0 is None:
+      self.get_k0()
 
-      # Solve for EPW wavenumber and set other unknowns
+    if self.mode == 'fluid':
+      # Solve for EPW wavenumber and set other unknowns bisecting fluid raman dispersion
       self.k2 = bisect(self.__bsrs__,self.k0,2*self.k0) # Look between k0 and 2k0
       self.omega2 = self.bohm_gross(self.k2,target='omega')
-      self.k1 = self.k0 - self.k2
-      self.omega1 = self.omega0 - self.omega2
+
     else:
-      raise Exception('Kinetic resonance solving not implemented')
+      # Solve similarly to above but replacing bohm-gross with linear kinetic dispersion
+      self.k2 = bisect(self.__bsrs_kin__,self.k0,2*self.k0)
+      omega2 = self.epw_kinetic_dispersion(self.k2,target='omega')
+      self.omega2 = np.real(omega2)
+      self.ldamping2 = -np.imag(omega2)
+
+    # Lastly set raman quantities by matching conditions
+    self.k1 = self.k0 - self.k2
+    self.omega1 = self.omega0 - self.omega2
+
 
   # Raman dispersion residual from k2
   def __bsrs__(self,k2):
-    omega_ek = self.bohm_gross(k2,target='omega')
+    omega_ek = np.real(self.bohm_gross(k2,target='omega'))
+    return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
+  # Raman dispersion residual from kinetic k2
+  def __bsrs_kin__(self,k2):
+    omega_ek = np.real(self.epw_kinetic_dispersion(k2,target='omega'))
     return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
 
   # Raman collisional damping

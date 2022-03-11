@@ -164,7 +164,7 @@ print(f'fluid \\omega_1 [1/s]: {birch.omega1:0.3e}')
 print(f'fluid \\omega_2 [1/s]: {birch.omega2:0.3e}')
 print(f'fluid k_1 [1/m]: {birch.k1:0.3e}')
 print(f'fluid k_2 [1/m]: {birch.k2:0.3e}')
-assert(birch.emw_dispersion_res(birch.omega1,birch.k1) < 1e14)
+assert(birch.emw_dispersion_res(birch.omega1,birch.k1) < 1e-14)
 
 # EPW collisional damping 
 birch.get_cdamping2()
@@ -179,6 +179,20 @@ real_assert(birch.ldamping2,64.47e12,2e13)
 birch.set_relativistic(True)
 birch.get_ldamping2()
 print(f'relativistic \\nu_2l [1/s]: {birch.ldamping2:0.3e}')
+
+# SRS kinetic resonance matching
+birch.set_mode('kinetic')
+birch.resonance_solve()
+print(f'kinetic \\omega_1 [1/s]: {birch.omega1:0.3e}')
+print(f'kinetic \\omega_2 [1/s]: {birch.omega2:0.3e}')
+print(f'kinetic k_1 [1/m]: {birch.k1:0.3e}')
+print(f'kinetic k_2 [1/m]: {birch.k2:0.3e}')
+print(f'Kinetic ldamping2 [1/s]: {birch.ldamping2:0.3e}')
+assert(birch.emw_dispersion_res(birch.omega1,birch.k1) < 1e-14)
+real_assert(birch.omega1,3.28e15,1e14)
+real_assert(birch.omega2,2.086e15,1e14)
+real_assert(birch.k2,26.35e6,1e6)
+real_assert(birch.ldamping2,64.47e12,1e12)
 
 # Final statement
 print('All health checks complete. What a happy forest.\n')
