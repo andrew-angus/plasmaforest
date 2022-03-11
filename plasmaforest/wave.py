@@ -8,6 +8,8 @@ import numpy as np
 from typing import Union,Optional,Tuple
 from typeguard import typechecked
 from .core import *
+from scipy.optimize import newton
+from scipy.integrate import odeint,solve_ivp
 
 # Core class, mainly a wrapper of select plasmapy functionality
 # Currently restricted to single-ion species
@@ -231,34 +233,54 @@ class wave_forest(forest):
 
     return gamma
 
-  """
   def epw_kinetic_dispersion(self,arg:floats,target:str) -> floats:
-    if self.ompe is None:
-      self.get_omp(species='e')
     if target == 'omega':
-      return np.sqrt(sqr(self.ompe) + sqr(sc.c*arg))
+      pass
     elif target == 'k':
-      return np.sqrt((sqr(arg) - sqr(self.ompe))\
-          /sqr(sc.c))
+      pass
     else:
       raise Exception("target must be one of \'omega\' or \'k\'.")
-  """
 
   # Get known starting point on natural EPW mode branch
   def __natural_epw_zeta__(self):
-    # Objective function, look for zero imag dZ
+    # Refine tabulated value with root-finding
+    zeta0 = 2.3 - 0.1j # Initial guess
+    self.zeta0 = self.__zero_dZim__(zeta0)
+
+    # Get K0 value corresponding to this zeta
+    dZfun0 = dZfun(self.zeta0)
+    self.K0 = np.real(np.sqrt(dZfun0/2))
+
+  # Look for zero imag dZ from close initial guess
+  def __zero_dZim__(self,zeta0:complex) -> complex:
+    # Objective function     def imdZ(zeta):
     def imdZ(zeta):
       zeta = zeta[0] + 1j*zeta[1]
       return np.imag(dZfun(zeta))
 
-    # Refine tabulated value with root-finding
-    zeta00 = np.array([2.3,-0.1]) # Initial guess
+    # Root find and return zeta
+    zeta00 = np.array([np.real(zeta0),np.imag(zeta0)])
     res = newton(imdZ,zeta00,tol=np.finfo(np.float64).eps)
-    self.zeta0 = res[0] + 1j*res[1]
+    zeta = res[0] + 1j*res[1]
+    return zeta
 
-    # Get K0 value corresponding to this zeta
-    dZfun0 = dZfun(zeta0)
-    self.K0 = np.real(np.sqrt(dZfun0/2))
+  # Integrate zeta ODE till desired K value
+  def zeta_int(self,Kf:float) -> complex:
+    # Get initial conditions if not already obtained
+    if self.zeta0 is None or self.K0 is none:
+      self.__natural_epw_zeta__()
+
+    # ODE driver
+    def zeta_ode(K,zeta):
+      return np.array([4*K/ddZfun(zeta)])
+
+    # Integrator
+    Ksolve = np.array([self.K0,Kf]) # Initial and final K
+    zetain = np.array([np.real(self.zeta0),np.imag(self.zeta0)])
+    #res = odeint(zeta_ode,zetain,Ksolve)
+    res = solve_ivp(zeta_ode,(self.K0,Kf),np.array([self.zeta0]))
+    print(res)
+    return res.y[-1,-1]
 
 # Plasma dispersion function
 @typechecked
@@ -271,3 +293,9 @@ def Zfun(zeta:flomplex) -> flomplex:
 def dZfun(zeta:flomplex) -> flomplex:
   dZ = -2*(1+zeta*Zfun(zeta))
   return dZ
+
+# 2nd derivative of plasma dispersion function
+@typechecked
+def ddZfun(zeta:flomplex) -> flomplex:
+  ddZ = -2*(Zfun(zeta)+zeta*dZfun(zeta))
+  return ddZ
