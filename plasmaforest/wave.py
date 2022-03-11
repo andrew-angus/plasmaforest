@@ -229,7 +229,7 @@ class wave_forest(forest):
       print(f'{gamma:0.3e}')
       """
       gamma = np.sqrt(np.pi)*sqr(self.ompe*omega)/pwr(k*self.vthe,3)\
-          *np.exp(-sqr(omega/(k*self.vthe)))/2
+          *np.exp(-sqr(omega/(k*self.vthe)))
 
     return gamma
 

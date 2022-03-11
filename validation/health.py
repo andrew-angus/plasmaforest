@@ -175,7 +175,7 @@ real_assert(np.sum(birch.cdamping2),5e10,4e10)
 # EPW Landau damping 
 birch.get_ldamping2()
 print(f'fluid \\nu_2l [1/s]: {birch.ldamping2:0.3e}')
-real_assert(birch.ldamping2,64.47e12,2e13)
+real_assert(birch.ldamping2,64.47e12,1e14)
 birch.set_relativistic(True)
 birch.get_ldamping2()
 print(f'relativistic \\nu_2l [1/s]: {birch.ldamping2:0.3e}')
