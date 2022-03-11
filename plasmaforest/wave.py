@@ -265,7 +265,7 @@ class wave_forest(forest):
     return zeta
 
   # Integrate zeta ODE till desired K value
-  def zeta_int(self,Kf:float) -> complex:
+  def zeta_int(self,Kf:float,refine:Optional[bool]=True) -> complex:
     # Get initial conditions if not already obtained
     if self.zeta0 is None or self.K0 is none:
       self.__natural_epw_zeta__()
@@ -275,12 +275,20 @@ class wave_forest(forest):
       return np.array([4*K/ddZfun(zeta)])
 
     # Integrator
-    Ksolve = np.array([self.K0,Kf]) # Initial and final K
     zetain = np.array([np.real(self.zeta0),np.imag(self.zeta0)])
     #res = odeint(zeta_ode,zetain,Ksolve)
     res = solve_ivp(zeta_ode,(self.K0,Kf),np.array([self.zeta0]))
+    zeta = res.y[-1,-1]
     print(res)
-    return res.y[-1,-1]
+    
+    # Optionally refine result
+    if refine:
+      zeta = self.__zero_dZim__(zeta)
+      K = np.real(np.sqrt(dZfun(zeta)/2))
+      res = solve_ivp(zeta_ode,(K,Kf),np.array([zeta]))
+      zeta = res.y[-1,-1]
+
+    return zeta
 
 # Plasma dispersion function
 @typechecked
