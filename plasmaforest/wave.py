@@ -233,11 +233,35 @@ class wave_forest(forest):
 
     return gamma
 
-  def epw_kinetic_dispersion(self,arg:floats,target:str) -> floats:
+  # Solve kinetic dispersion to find natural omega/k from respective part
+  def epw_kinetic_dispersion(self,arg:floats,target:str):
+    if self.dbye is None:
+      self.get_dbyl()
+    if self.vthe is None:
+      self.get_vth(species='e')
+
     if target == 'omega':
-      pass
+      # Integrate along solution branch to desired k
+      K = arg*self.dbye
+      zeta = self.zeta_int(K)
+      omega = zeta*self.vthe*arg
+      return omega
+
     elif target == 'k':
-      pass
+      # Initial guess at k from fluid dispersion  
+      kguess = self.bohm_gross(arg,target='k')
+      Kguess = kguess*self.dbye
+      # Iterate ode solver till correct real omega found
+      # Objective function
+      def omegar_diff(K):
+        zeta = self.zeta_int(K)
+        omegar = np.real(zeta*self.vthe*K/self.dbye)
+        return omegar - arg
+      # Solve for K
+      res = newton(omegar_diff,Kguess,tol=np.finfo(np.float64).eps)
+      k = res/self.dbye
+      return k
+
     else:
       raise Exception("target must be one of \'omega\' or \'k\'.")
 
@@ -267,7 +291,7 @@ class wave_forest(forest):
   # Integrate zeta ODE till desired K value
   def zeta_int(self,Kf:float,refine:Optional[bool]=True) -> complex:
     # Get initial conditions if not already obtained
-    if self.zeta0 is None or self.K0 is none:
+    if self.zeta0 is None or self.K0 is None:
       self.__natural_epw_zeta__()
 
     # ODE driver
@@ -279,7 +303,6 @@ class wave_forest(forest):
     #res = odeint(zeta_ode,zetain,Ksolve)
     res = solve_ivp(zeta_ode,(self.K0,Kf),np.array([self.zeta0]))
     zeta = res.y[-1,-1]
-    print(res)
     
     # Optionally refine result
     if refine:
