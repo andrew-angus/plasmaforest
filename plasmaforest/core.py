@@ -327,4 +327,3 @@ def sqr(arg:flint) -> flint:
 def dtype_check(arr:np.ndarray,dtype:type):
   assert arr.dtype == dtype, f'numpy array {arr} must be {dtype} dtype'+\
       f' but is {arr.dtype}'
-

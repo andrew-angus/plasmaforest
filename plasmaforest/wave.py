@@ -17,6 +17,8 @@ from .core import *
 class wave_forest(forest):
   def __init__(self,*args,**kwargs):
     super().__init__(*args,**kwargs)
+    self.zeta0 = None # Known natural zeta solution for kinetic dispersion
+    self.K0 = None # Known natural K solution for kinetic dispersion
   
   # Solve the EMW dispersion relation in a plasma
   def emw_dispersion(self,arg:floats,target:str) -> floats:
@@ -65,18 +67,6 @@ class wave_forest(forest):
     prefac = np.sqrt(0.5*gamma)
     return -sqr(omega/self.ompe)+sqr(prefac*self.vthe*k/self.ompe)+1.0
 
-  # Plasma dispersion function
-  def Zfun(self,omega:flomplex,k:flomplex,species:str) -> flomplex:
-    zeta = self.__zeta__(omega=omega,k=k,species=species)
-    Z = pp.dispersion.plasma_dispersion_func(zeta)
-    return Z
-
-  # Derivative of plasma dispersion function
-  def dZfun(self,omega:flomplex,k:flomplex,species:str) -> flomplex:
-    zeta = self.__zeta__(omega=omega,k=k,species=species)
-    Z = pp.dispersion.plasma_dispersion_func(zeta)
-    dZ = -2*(1+zeta*Z)
-
   # Calculate zeta for both plasma dispersion function and its derivative
   def __zeta__(self,omega:flomplex,k:flomplex,species:str) -> flomplex:
     if species == 'e':
@@ -93,7 +83,6 @@ class wave_forest(forest):
 
   # Plasma susceptibility calculated with the plasma dispersion function
   def susceptibility(self,omega:flomplex,k:flomplex,species:str) -> flomplex: 
-    dZ = dZfun(omega=omega,k=k,species=species)
     if species == 'e':
       if self.vthe is None:
         self.get_vth(species='e')
@@ -110,8 +99,9 @@ class wave_forest(forest):
       a = self.vthi
     else:
       raise Exception("species must be one of \'e\' or \'i\'.")
-      
-      return -sqr(omp/(k*a))*dZ
+     
+    zeta = self.__zeta__(omega,k,species)
+    return -sqr(omp/(k*a))*dZfun(zeta)
 
   # Linear kinetic dispersion equation
   def kinetic_dispersion(self,omega:flomplex,k:flomplex,full:Optional[bool]=True) -> flomplex:
@@ -240,3 +230,44 @@ class wave_forest(forest):
           *np.exp(-sqr(omega/(k*self.vthe)))/2
 
     return gamma
+
+  """
+  def epw_kinetic_dispersion(self,arg:floats,target:str) -> floats:
+    if self.ompe is None:
+      self.get_omp(species='e')
+    if target == 'omega':
+      return np.sqrt(sqr(self.ompe) + sqr(sc.c*arg))
+    elif target == 'k':
+      return np.sqrt((sqr(arg) - sqr(self.ompe))\
+          /sqr(sc.c))
+    else:
+      raise Exception("target must be one of \'omega\' or \'k\'.")
+  """
+
+  # Get known starting point on natural EPW mode branch
+  def __natural_epw_zeta__(self):
+    # Objective function, look for zero imag dZ
+    def imdZ(zeta):
+      zeta = zeta[0] + 1j*zeta[1]
+      return np.imag(dZfun(zeta))
+
+    # Refine tabulated value with root-finding
+    zeta00 = np.array([2.3,-0.1]) # Initial guess
+    res = newton(imdZ,zeta00,tol=np.finfo(np.float64).eps)
+    self.zeta0 = res[0] + 1j*res[1]
+
+    # Get K0 value corresponding to this zeta
+    dZfun0 = dZfun(zeta0)
+    self.K0 = np.real(np.sqrt(dZfun0/2))
+
+# Plasma dispersion function
+@typechecked
+def Zfun(zeta:flomplex) -> flomplex:
+  Z = pp.dispersion.plasma_dispersion_func(zeta)
+  return Z
+
+# Derivative of plasma dispersion function
+@typechecked
+def dZfun(zeta:flomplex) -> flomplex:
+  dZ = -2*(1+zeta*Zfun(zeta))
+  return dZ
