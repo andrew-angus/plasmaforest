@@ -1,7 +1,6 @@
 #!/bin/python3
 from .core import *
 from .wave import *
-from typeguard import typechecked
 
 # Laser-plasma forest with routines for laser specific quantities
 @typechecked

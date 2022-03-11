@@ -7,7 +7,7 @@ with open("README.md", "r") as fh:
 
 setup(
   name="plasmaforest",
-  version="0.1.0",
+  version="1.0.0",
 
   author="Andrew Angus",
   author_email="andrew.angus@warwick.ac.uk",
@@ -16,14 +16,16 @@ setup(
 
   url="https://github.com/andrewanguswarwick/plasmaforest",
 
-  description="Laser-plasma quantity solver and handler",
+  description="Plasma quantity solver and handler",
   long_description=long_description,
   long_description_content_type="text/markdown",
 
-  python_requires='>=3.6',
+  python_requires='>=3.8',
   install_requires=[
     "plasmapy",
     "numpy",
-    "scipy"
+    "scipy",
+    "astropy",
+    "typeguard",
     ],
 )

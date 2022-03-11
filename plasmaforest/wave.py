@@ -1,15 +1,9 @@
 #!/bin/python3
 
-import plasmapy as pp
-import astropy.units as u
-import astropy.constants as ac
-import scipy.constants as sc
-import numpy as np
-from typing import Union,Optional,Tuple
-from typeguard import typechecked
 from .core import *
+import astropy.constants as ac
 from scipy.optimize import newton
-from scipy.integrate import odeint,solve_ivp
+from scipy.integrate import solve_ivp
 
 # Core class, mainly a wrapper of select plasmapy functionality
 # Currently restricted to single-ion species
@@ -107,9 +101,9 @@ class wave_forest(forest):
 
   # Linear kinetic dispersion equation
   def kinetic_dispersion(self,omega:flomplex,k:flomplex,full:Optional[bool]=True) -> flomplex:
-    dis = 1 + susceptibility(omega=omega,k=k,species='e')
+    dis = 1 + self.susceptibility(omega=omega,k=k,species='e')
     if full:
-      dis += np.sum(susceptibility(omega=omega,k=k,species='i'))
+      dis += np.sum(self.susceptibility(omega=omega,k=k,species='i'))
     return dis
 
   # Phase velocity of a wave

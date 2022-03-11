@@ -1,12 +1,5 @@
 #!/bin/python3
 
-import plasmapy as pp
-import astropy.units as u
-import astropy.constants as ac
-import scipy.constants as sc
-import numpy as np
-from typing import Union,Optional,Tuple
-from typeguard import typechecked
 from .core import *
 from .laser import *
 from .wave import *

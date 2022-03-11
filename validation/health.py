@@ -7,13 +7,9 @@
 # Raman backscatter in laser fusion plasmas. 
 # Diss. Massachusetts Institute of Technology, 2005.
 
-from plasmaforest.core import *
-from plasmaforest.wave import *
-from plasmaforest.laser import *
 from plasmaforest.srs import *
 import scipy.constants as sc
 import numpy as np
-import astropy.units as u
 from plasmapy.utils.exceptions import RelativityWarning
 import warnings
 
