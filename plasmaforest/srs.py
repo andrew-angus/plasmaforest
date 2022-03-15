@@ -9,10 +9,11 @@ from scipy.optimize import bisect
 # Currently direct backscatter only
 @typechecked
 class srs_forest(laser_forest):
-  def __init__(self,mode:str,relativistic:bool,*args,**kwargs):
+  def __init__(self,mode:str,sdl:bool,relativistic:bool,*args,**kwargs):
     super().__init__(*args,**kwargs)
     self.set_mode(mode)
     self.set_relativistic(relativistic)
+    self.set_strong damping_limit(sdl)
 
   # Check mode
   def __mode_check__(self,mode:str):
@@ -36,6 +37,10 @@ class srs_forest(laser_forest):
     self.relativistic = relativistic
     self.ldamping2 = None
 
+  def set_strong_damping_limit(self,sdl:bool):
+    self.sdl = sdl
+    self.gain_coeff = None
+    self.growth_rate = None
   # Update nullfications on inherited set routines
   def set_ndim(self,*args,**kwargs):
     super().set_ndim(*args,**kwargs)
@@ -127,3 +132,17 @@ class srs_forest(laser_forest):
     if self.omega2 is None or self.k2 is None:
       self.resonance_solve()
     self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,self.relativistic)
+
+  def get_gain_coeff(self):
+    if self.mode == "fluid":
+      K = np.abs(self.k2)*sqr(self.ompe)\
+          /np.sqrt(8*sc.m_e*self.ne*self.omega1*self.omega2*self.omega3)
+      kmis = self.k0 - self.k1 - self.k2
+      ommis = self.omega0 - self.omega1 - self.omega2
+      if self.sdl:
+        nu2 = self.cdamping2 + self.ldamping2
+        self.gain_coeff = 2*sqr(K)/(pwr(sc.c,4)*np.abs(self.k0*self.k1)*nu2)
+      else:
+        self.gain_coeff = 2*K/(sqr(c)*self.vthe*np.sqrt(3*np.abs(self.k0*self.k1*self.k2)))
+
+
