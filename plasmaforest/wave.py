@@ -61,7 +61,8 @@ class wave_forest(forest):
       self.get_vth(species='e')
     gamma = (2+self.ndim)/self.ndim
     prefac = np.sqrt(0.5*gamma)
-    return -sqr(omega/self.ompe)+sqr(prefac*self.vthe*k/self.ompe)+1.0
+    #return -sqr(omega/self.ompe)+sqr(prefac*self.vthe*k/self.ompe)+1.0
+    return 1-sqr(prefac*self.vthe*k/omega)-sqr(self.ompe/omega)
 
   # Calculate zeta for both plasma dispersion function and its derivative
   def __zeta__(self,omega:flomplex,k:flomplex,species:str) -> flomplex:

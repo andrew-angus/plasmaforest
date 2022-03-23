@@ -13,7 +13,7 @@ class srs_forest(laser_forest):
     super().__init__(*args,**kwargs)
     self.set_mode(mode)
     self.set_relativistic(relativistic)
-    self.set_strong damping_limit(sdl)
+    self.set_strong_damping_limit(sdl)
 
   # Check mode
   def __mode_check__(self,mode:str):
@@ -134,15 +134,33 @@ class srs_forest(laser_forest):
     self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,self.relativistic)
 
   def get_gain_coeff(self):
-    if self.mode == "fluid":
-      K = np.abs(self.k2)*sqr(self.ompe)\
-          /np.sqrt(8*sc.m_e*self.ne*self.omega1*self.omega2*self.omega3)
-      kmis = self.k0 - self.k1 - self.k2
-      ommis = self.omega0 - self.omega1 - self.omega2
+    if self.ompe is None:
+      self.get_omp(species='e')
+    if self.vthe is None:
+      self.get_vth(species='e')
+    K = np.abs(self.k2)*sqr(self.ompe)\
+        /np.sqrt(8*sc.m_e*self.ne*self.omega0*self.omega1*self.omega2)
+    gamma = (2+self.ndim)/self.ndim
+    prefac = 0.5*gamma
+    Kf = K/sqr(self.ompe)*np.abs(sqr(self.omega2)-prefac*sqr(self.vthe*self.k2))
+    if self.mode == 'fluid':
       if self.sdl:
-        nu2 = self.cdamping2 + self.ldamping2
-        self.gain_coeff = 2*sqr(K)/(pwr(sc.c,4)*np.abs(self.k0*self.k1)*nu2)
+        res = self.bohm_gross_res(self.omega2,self.k2)*0.5*self.omega2
+        nu2 = np.sum(self.cdamping2) + self.ldamping2
+        nueff = np.sqrt(np.max(-sqr(res)+sqr(nu2)))/(sqr(res)+sqr(nu2))
+        self.gain_coeff = 2*sqr(K)*nueff/(pwr(sc.c,4)*np.abs(self.k0*self.k1))
       else:
-        self.gain_coeff = 2*K/(sqr(c)*self.vthe*np.sqrt(3*np.abs(self.k0*self.k1*self.k2)))
+        self.gain_coeff = 2*Kf/(sqr(c)*self.vthe*np.sqrt(prefac*np.abs(self.k0*self.k1*self.k2)))
+    elif self.mode == 'kinetic':
+      if self.sdl:
+        perm = self.kinetic_dispersion(self.omega2,self.k2,full=False)
+        fac = -np.imag(1/perm)
+        self.gain_coeff = 4*sqr(Kf)*self.omega2*fac/\
+            (pwr(sc.c,4)*sqr(self.ompe)*np.abs(self.k0*self.k1))
+      else:
+        raise Exception("Gain coefficient calc for non-SDL kinetic case not implemented.")
+
+
+
 
 
