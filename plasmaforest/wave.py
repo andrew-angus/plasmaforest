@@ -2,7 +2,7 @@
 
 from .core import *
 import astropy.constants as ac
-from scipy.optimize import newton
+from scipy.optimize import newton, minimize
 from scipy.integrate import solve_ivp
 
 # Core class, mainly a wrapper of select plasmapy functionality
@@ -100,8 +100,8 @@ class wave_forest(forest):
     zeta = self.__zeta__(omega,k,species)
     return -sqr(omp/(k*a))*dZfun(zeta)
 
-  # Linear kinetic dispersion equation
-  def kinetic_dispersion(self,omega:flomplex,k:flomplex,full:Optional[bool]=True) -> flomplex:
+  # Linear kinetic permittivity equation
+  def kinetic_permittivity(self,omega:flomplex,k:flomplex,full:Optional[bool]=True) -> flomplex:
     dis = 1 + self.susceptibility(omega=omega,k=k,species='e')
     if full:
       dis += np.sum(self.susceptibility(omega=omega,k=k,species='i'))
@@ -200,13 +200,13 @@ class wave_forest(forest):
     if mode == 'fluid':
       if self.vthe is None:
         self.get_vth(species='e')
+      if self.dbye is None:
+        self.get_dbyl()
 
       # Relativistic calc of Landau damping according to:
       # Bers - Relativistic Landau damping of electron plasma waves 
       # in stimulated Raman scattering (2009)
       if relativistic:
-        if self.dbye is None:
-          self.get_dbyl()
         vth = self.vthe/np.sqrt(2)
         mu = sqr(sc.c/vth)
         N = sc.c*k/omega
@@ -227,10 +227,12 @@ class wave_forest(forest):
             *np.exp(-0.5*sqr(omega2/(k*vthe1d))) # lpse
         print(f'{gamma:0.3e}')
         """
-        gamma = np.sqrt(np.pi)*sqr(self.ompe*omega)/pwr(k*self.vthe,3)\
-            *np.exp(-sqr(omega/(k*self.vthe)))
+        #gamma = np.sqrt(np.pi)*sqr(self.ompe*omega)/pwr(k*self.vthe,3)\
+            #*np.exp(-sqr(omega/(k*self.vthe)))
+        K = k*self.dbye
+        gamma = omega*np.exp(-0.5*(3+1/sqr(K)))*np.sqrt(np.pi/8)*(1-4.5*sqr(K))/np.abs(pwr(K,3))
     elif mode == 'kinetic':
-      eps = self.kinetic_dispersion(omega,k,full=False)
+      eps = self.kinetic_permittivity(omega,k,full=False)
       depsdom = 2*omega/sqr(self.ompe) # Fluid approximation
       gamma = np.imag(eps)/depsdom
 
@@ -315,6 +317,20 @@ class wave_forest(forest):
       zeta = res.y[-1,-1]
 
     return zeta
+
+  # Get undamped mode by searching for zero of real permittivity for real argument
+  def undamped_dispersion(self,k:float):
+    # Objective functions
+    def realeps(omega):
+      return np.abs(np.real(self.kinetic_permittivity(omega[0],k,full=False)))
+
+    # Get zero of real permittivity by minimisation
+    omega0 = self.bohm_gross(k,target='omega')
+    res = minimize(realeps,np.array([omega0]),tol=np.finfo(np.float64).eps)
+    omega = res.x[0]
+
+    return omega
+
 
 # Plasma dispersion function
 @typechecked
