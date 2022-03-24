@@ -193,38 +193,46 @@ class wave_forest(forest):
     
     return 0.5*A*self.ompe
 
-  def epw_landau_damping(self,omega:floats,k:floats,relativistic:Optional[bool]=False) -> floats:
+  def epw_landau_damping(self,omega:floats,k:floats,\
+      mode:str,relativistic:Optional[bool]=False) -> floats:
     if self.ompe is None:
       self.get_omp(species='e')
-    if self.vthe is None:
-      self.get_vth(species='e')
+    if mode == 'fluid':
+      if self.vthe is None:
+        self.get_vth(species='e')
 
-    # Relativistic calc of Landau damping according to:
-    # Bers - Relativistic Landau damping of electron plasma waves 
-    # in stimulated Raman scattering (2009)
-    if relativistic:
-      vth = self.vthe/np.sqrt(2)
-      mu = sqr(sc.c/vth)
-      N = sc.c*k/omega
-      kdb = k*self.dbye
-      z0 = mu*np.abs(N)/np.sqrt(sqr(N)-1)
-      gamma = np.sqrt(np.pi/8)*omega*pwr(mu,3/2)*np.exp(mu*(1-N/np.sqrt(sqr(N)-1)))\
-          /(np.abs(N)*(sqr(N)-1))*(1+2/z0+2/sqr(z0))/(1+6*sqr(kdb)-5/(2*mu))
+      # Relativistic calc of Landau damping according to:
+      # Bers - Relativistic Landau damping of electron plasma waves 
+      # in stimulated Raman scattering (2009)
+      if relativistic:
+        if self.dbye is None:
+          self.get_dbyl()
+        vth = self.vthe/np.sqrt(2)
+        mu = sqr(sc.c/vth)
+        N = sc.c*k/omega
+        kdb = k*self.dbye
+        z0 = mu*np.abs(N)/np.sqrt(sqr(N)-1)
+        gamma = np.sqrt(np.pi/8)*omega*pwr(mu,3/2)*np.exp(mu*(1-N/np.sqrt(sqr(N)-1)))\
+            /(np.abs(N)*(sqr(N)-1))*(1+2/z0+2/sqr(z0))/(1+6*sqr(kdb)-5/(2*mu))
 
-    # First order approximation of non-relativistic landau damping
-    # Calculated according to Swanson - Plasma Waves (2012)
-    else:
-      """
-      vthe1d = self.vthe/np.sqrt(2)
-      dk = k*vthe1d/omega
-      omega2 = omega*(1+3/2*sqr(dk))
-      print(self.ompe,omega,omega2)
-      gamma = np.sqrt(np.pi/8)*omega2/pwr(dk,3)\
-          *np.exp(-0.5*sqr(omega2/(k*vthe1d))) # lpse
-      print(f'{gamma:0.3e}')
-      """
-      gamma = np.sqrt(np.pi)*sqr(self.ompe*omega)/pwr(k*self.vthe,3)\
-          *np.exp(-sqr(omega/(k*self.vthe)))
+      # First order approximation of non-relativistic landau damping
+      # Calculated according to Swanson - Plasma Waves (2012)
+      else:
+        """
+        vthe1d = self.vthe/np.sqrt(2)
+        dk = k*vthe1d/omega
+        omega2 = omega*(1+3/2*sqr(dk))
+        print(self.ompe,omega,omega2)
+        gamma = np.sqrt(np.pi/8)*omega2/pwr(dk,3)\
+            *np.exp(-0.5*sqr(omega2/(k*vthe1d))) # lpse
+        print(f'{gamma:0.3e}')
+        """
+        gamma = np.sqrt(np.pi)*sqr(self.ompe*omega)/pwr(k*self.vthe,3)\
+            *np.exp(-sqr(omega/(k*self.vthe)))
+    elif mode == 'kinetic':
+      eps = self.kinetic_dispersion(omega,k,full=False)
+      depsdom = 2*omega/sqr(self.ompe) # Fluid approximation
+      gamma = np.imag(eps)/depsdom
 
     return gamma
 

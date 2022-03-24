@@ -4,3 +4,4 @@ todo
 dev.sh
 health.sh
 plasmaforest.egg-info
+.nfs*

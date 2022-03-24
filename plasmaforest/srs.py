@@ -131,13 +131,20 @@ class srs_forest(laser_forest):
   def get_ldamping2(self):
     if self.omega2 is None or self.k2 is None:
       self.resonance_solve()
-    self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,self.relativistic)
+    self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,self.mode,self.relativistic)
 
   def get_gain_coeff(self):
     if self.ompe is None:
       self.get_omp(species='e')
     if self.vthe is None:
       self.get_vth(species='e')
+    if self.k0 is None:
+      self.get_k0()
+    if self.omega0 is None:
+      self.get_omega0()
+    if self.omega1 is None or self.omega2 is None \
+        or self.k1 is None or self.k2 is None:
+      self.resonance_solve()
     K = np.abs(self.k2)*sqr(self.ompe)\
         /np.sqrt(8*sc.m_e*self.ne*self.omega0*self.omega1*self.omega2)
     gamma = (2+self.ndim)/self.ndim
@@ -145,9 +152,16 @@ class srs_forest(laser_forest):
     Kf = K/sqr(self.ompe)*np.abs(sqr(self.omega2)-prefac*sqr(self.vthe*self.k2))
     if self.mode == 'fluid':
       if self.sdl:
+        if self.ldamping2 is None:
+          self.get_ldamping2()
         res = self.bohm_gross_res(self.omega2,self.k2)*0.5*self.omega2
-        nu2 = np.sum(self.cdamping2) + self.ldamping2
-        nueff = np.sqrt(np.max(-sqr(res)+sqr(nu2)))/(sqr(res)+sqr(nu2))
+        if self.nion > 0:
+          if self.cdamping2 is None:
+            self.get_cdamping2()
+          nu2 = np.sum(self.cdamping2) + self.ldamping2
+        else:
+          nu2 = self.ldamping2
+        nueff = np.sqrt(np.maximum(-sqr(res)+sqr(nu2),0))/(sqr(res)+sqr(nu2))
         self.gain_coeff = 2*sqr(K)*nueff/(pwr(sc.c,4)*np.abs(self.k0*self.k1))
       else:
         self.gain_coeff = 2*Kf/(sqr(c)*self.vthe*np.sqrt(prefac*np.abs(self.k0*self.k1*self.k2)))
