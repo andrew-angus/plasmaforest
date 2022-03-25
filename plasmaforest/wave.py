@@ -319,17 +319,84 @@ class wave_forest(forest):
     return zeta
 
   # Get undamped mode by searching for zero of real permittivity for real argument
-  def undamped_dispersion(self,k:float):
-    # Objective functions
-    def realeps(omega):
-      return np.abs(np.real(self.kinetic_permittivity(omega[0],k,full=False)))
+  def undamped_dispersion_failed(self,k:float) -> float:
+    if self.dbye is None:
+      self.get_dbyl()
+    if self.vthe is None:
+      self.get_vth(species='e')
 
     # Get zero of real permittivity by minimisation
-    omega0 = self.bohm_gross(k,target='omega')
-    res = minimize(realeps,np.array([omega0]),tol=np.finfo(np.float64).eps)
-    omega = res.x[0]
+    K = k*self.dbye
+    omega = self.zetar_int(K,refine=False)*self.vthe*k
 
     return omega
+
+  # Integrate real zeta ODE till desired K value
+  def zetar_int(self,Kf:float,refine:Optional[bool]=True) -> complex:
+    # ODE driver
+    def zetar_ode(K,zeta):
+      Zr = np.real(Zfun(zeta))
+      return np.array([4*K/(-2*Zr+4*zeta+4*zeta*Zr)])
+
+    # Integrator
+    print(Kf)
+    K0 = 0.1630896799156106
+    zeta0 = 4.5154157506680495
+    res = solve_ivp(zetar_ode,(K0,Kf),np.array([zeta0]))
+    zeta = res.y[-1,-1]
+    
+    # Optionally refine result
+    def reps(K):
+      return 2*sqr(K)-np.real(dZfun(zeta))
+    if refine:
+      K = newton(reps,Kf)
+      res = solve_ivp(zetar_ode,(K,Kf),np.array([zeta]))
+      zeta = res.y[-1,-1]
+    print(zeta)
+
+    return zeta
+
+  def undamped_dispersion(self,k:float) -> float:
+    if self.dbye is None:
+      self.get_dbyl()
+    if self.ompe is None:
+      self.get_omp(species='e')
+    if self.vthe is None:
+      self.get_vth(species='e')
+
+    def repsana(omega):
+      omrat = self.ompe/omega[0]
+      return np.abs(1-sqr(omrat)*(1+3*sqr(omrat*K)+15*pwr(omrat*K,4)))
+    def realeps(omega):
+      return np.abs(np.real(self.kinetic_permittivity(omega[0],k,full=False)))
+    def reps(zeta):
+      #return np.real(self.kinetic_permittivity(omega[0],k,full=False))
+      return fac-np.real(dZfun(zeta))
+
+    # Get zero of real permittivity by minimisation
+    K = k*self.dbye
+    omega0 = self.bohm_gross(k,target='omega')
+    res = minimize(repsana,np.array([omega0]),tol=np.finfo(np.float64).eps)
+    omega0 = res.x[0]
+    res = minimize(realeps,np.array([omega0]),tol=np.finfo(np.float64).eps)
+    omega0 = res.x[0]
+    zeta0 = omega0/(k*self.vthe)
+    fac = 2*sqr(K)
+    try:
+      res = newton(reps,np.array([zeta0]),tol=100*np.finfo(np.float64).eps)
+      omega = res[0]*k*self.vthe
+    except:
+      omega = omega0
+
+    """
+    res = minimize(repsana,np.array([omega0]),tol=np.finfo(np.float64).eps)
+    omega0 = res.x[0]
+    res = minimize(realeps,np.array([omega0]),tol=np.finfo(np.float64).eps)
+    omega0 = res.x[0]
+    """
+
+    return omega
+
 
 
 # Plasma dispersion function
