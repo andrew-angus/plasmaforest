@@ -18,13 +18,14 @@ warnings.filterwarnings("ignore", category=RelativityWarning)
 
 # Setup case
 mode = 'fluid'
+sdl = True # Strong damping limit (No EPW propagation)
 relativistic = False
 ndim = 1 # 1D case
 lambda0 = 351.0e-9 # m
 I0 = 2e19 # W/m^2
 
 # Laser forest instance initially without plasma parameter specification
-birch = srs_forest(mode,relativistic,lambda0,I0,ndim,electrons=False,nion=0)
+birch = srs_forest(mode,sdl,relativistic,lambda0,I0,ndim,electrons=False,nion=0)
 
 # Get and verify laser vacuum parameters and critical density
 birch.get_kvac()

@@ -82,7 +82,7 @@ class srs_forest(laser_forest):
     self.ldamping2 = None
 
   # Get matching wavenumbers and frequencies by either fluid or kinetic dispersion
-  def resonance_solve(self,undamped:Optional[bool]=True):
+  def resonance_solve(self,undamped:Optional[bool]=False):
     # Check omega0 and k0 already set
     if self.omega0 is None:
       self.get_omega0()
