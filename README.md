@@ -6,4 +6,4 @@ Extension with 'subforests' then possible for specific applications such as lase
 
 Current subforests: laser, wave, SRS
 
-Run 'pip install .' in parent directory to install
+Run 'pip3 install .' in parent directory to install
