@@ -177,7 +177,7 @@ class srs_forest(laser_forest):
       if self.sdl:
         perm = self.kinetic_permittivity(self.omega2,self.k2,full=False)
         fac = -np.imag(1/perm)
-        self.gain_coeff = 4*sqr(Kf)*self.omega2*fac/\
+        self.gain_coeff = 4*sqr(K)*self.omega2*fac/\
             (pwr(sc.c,4)*sqr(self.ompe)*np.abs(self.k0*self.k1))
       else:
         raise Exception("Gain coefficient calc for non-SDL kinetic case not implemented.")
