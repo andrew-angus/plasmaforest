@@ -4,6 +4,7 @@ from .core import *
 import astropy.constants as ac
 from scipy.optimize import newton, minimize
 from scipy.integrate import solve_ivp
+from scipy.special import kn
 
 # Core class, mainly a wrapper of select plasmapy functionality
 # Currently restricted to single-ion species
@@ -197,38 +198,36 @@ class wave_forest(forest):
       mode:str,relativistic:Optional[bool]=False) -> floats:
     if self.ompe is None:
       self.get_omp(species='e')
-    if mode == 'fluid':
-      if self.vthe is None:
-        self.get_vth(species='e')
-      if self.dbye is None:
-        self.get_dbyl()
+    if self.vthe is None:
+      self.get_vth(species='e')
+    if self.dbye is None:
+      self.get_dbyl()
 
-      # Relativistic calc of Landau damping according to:
-      # Bers - Relativistic Landau damping of electron plasma waves 
-      # in stimulated Raman scattering (2009)
-      if relativistic:
-        vth = self.vthe/np.sqrt(2)
-        mu = sqr(sc.c/vth)
-        N = sc.c*k/omega
-        kdb = k*self.dbye
-        z0 = mu*np.abs(N)/np.sqrt(sqr(N)-1)
-        gamma = np.sqrt(np.pi/8)*omega*pwr(mu,3/2)*np.exp(mu*(1-N/np.sqrt(sqr(N)-1)))\
-            /(np.abs(N)*(sqr(N)-1))*(1+2/z0+2/sqr(z0))/(1+6*sqr(kdb)-5/(2*mu))
-
+    # Relativistic calc of Landau damping according to:
+    # Bers - Relativistic Landau damping of electron plasma waves 
+    # in stimulated Raman scattering (2009)
+    if relativistic:
+      vth = self.vthe/np.sqrt(2)
+      mu = sqr(sc.c/vth)
+      N = sc.c*k/omega
+      kdb = k*self.dbye
+      z0 = mu*np.abs(N)/np.sqrt(sqr(N)-1)
+      gamma = np.sqrt(np.pi/8)*omega*pwr(mu,3/2)*np.exp(mu*(1-N/np.sqrt(sqr(N)-1)))\
+          /(np.abs(N)*(sqr(N)-1))*(1+2/z0+2/sqr(z0))/(1+6*sqr(kdb)-5/(2*mu))
+    else:
       # First order approximation of non-relativistic landau damping
       # Calculated according to Swanson - Plasma Waves (2012)
-      else:
+      if mode == 'fluid':
         gamma = np.sqrt(np.pi)*sqr(self.ompe*omega)/pwr(k*self.vthe,3)\
             *np.exp(-sqr(omega/(k*self.vthe)))
-        #K = k*self.dbye
-        #gamma = omega*np.exp(-0.5*(3+1/sqr(K)))*np.sqrt(np.pi/8)*(1-4.5*sqr(K))/np.abs(pwr(K,3))
-    elif mode == 'kinetic':
-      eps = self.kinetic_permittivity(omega,k,full=False)
-      #depsdom = 2*omega/sqr(self.ompe) # Fluid approximation
-      step = 1e-6*omega # Relative step
-      depsdom = np.real(self.kinetic_permittivity(omega+step,k,full=False)\
-          -self.kinetic_permittivity(omega-step,k,full=False))/(2*step) # Central differences
-      gamma = np.imag(eps)/depsdom
+      # Kinetic damping approximation on taylor expansion of permittivity
+      elif mode == 'kinetic':
+        eps = self.kinetic_permittivity(omega,k,full=False)
+        #depsdom = 2*omega/sqr(self.ompe) # Fluid limit
+        step = 1e-6*omega # Relative step
+        depsdom = np.real(self.kinetic_permittivity(omega+step,k,full=False)\
+            -self.kinetic_permittivity(omega-step,k,full=False))/(2*step) # Central differences
+        gamma = np.imag(eps)/depsdom
 
     return gamma
 
@@ -382,16 +381,62 @@ class wave_forest(forest):
     except:
       omega = omega0
 
-    """
-    res = minimize(repsana,np.array([omega0]),tol=np.finfo(np.float64).eps)
-    omega0 = res.x[0]
-    res = minimize(realeps,np.array([omega0]),tol=np.finfo(np.float64).eps)
-    omega0 = res.x[0]
-    """
-
     return omega
 
+  # Permittivity approximation with relativistic correction
+  def relativistic_permittivity(self,omega,k):
+    if self.dbye is None:
+      self.get_dbyl()
+    if self.ompe is None:
+      self.get_omp(species='e')
+    if self.vthe is None:
+      self.get_vth(species='e')
 
+    # Real part
+    K = k*self.dbye
+    vth = self.vthe/np.sqrt(2)
+    mu = sqr(sc.c/vth)
+    omrat = self.ompe/omega
+    epsr = 1-sqr(omrat)*(1+3*sqr(omrat*K)+15*pwr(omrat*K,4)-2.5/mu)
+
+    # Imaginary part
+    N = sc.c*k/omega
+    z0 = mu*np.abs(N)/np.sqrt(sqr(N)-1)
+    epsi = 0.5*np.pi*sqr(omrat)*mu*np.exp(-z0)*(1+2/z0+2/sqr(z0))\
+        /(np.abs(N)*(sqr(N)-1)*kn(2,mu))
+
+    return epsr + 1j*epsi
+
+  def relativistic_dispersion(self,k:float) -> float:
+    if self.dbye is None:
+      self.get_dbyl()
+    if self.ompe is None:
+      self.get_omp(species='e')
+    if self.vthe is None:
+      self.get_vth(species='e')
+
+    def reps(omega):
+      omrat = self.ompe/omega[0]
+      return 1-sqr(omrat)*(1+3*sqr(omrat*K)+15*pwr(omrat*K,4)-2.5/mu)
+    def repsa(omega):
+      omrat = self.ompe/omega[0]
+      return np.abs(1-sqr(omrat)*(1+3*sqr(omrat*K)+15*pwr(omrat*K,4)-2.5/mu))
+
+    # Get zero of real permittivity by minimisation
+    K = k*self.dbye
+    vth = self.vthe/np.sqrt(2)
+    mu = sqr(sc.c/vth)
+    omega0 = self.bohm_gross(k,target='omega')
+    res = minimize(repsa,np.array([omega0]),tol=np.finfo(np.float64).eps)
+    omega0 = res.x[0]
+    # Try and refine wih Newton root-finding
+    try:
+      res = newton(reps,np.array([omega0]),tol=100*np.finfo(np.float64).eps)
+      omega = res[0]
+    except:
+      omega = omega0
+
+    return omega
 
 # Plasma dispersion function
 @typechecked

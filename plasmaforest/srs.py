@@ -96,15 +96,20 @@ class srs_forest(laser_forest):
 
     elif self.mode == 'kinetic':
       # Solve similarly to above but replacing bohm-gross with linear kinetic dispersion
-      if undamped:
-        self.k2 = bisect(self.__bsrs_kinu__,self.k0,2*self.k0)
-        self.omega2 = self.undamped_dispersion(self.k2) # Undamped mode
+      if self.relativistic:
+        self.k2 = bisect(self.__bsrs_kinr__,self.k0,2*self.k0)
+        self.omega2 = self.relativistic_dispersion(self.k2) # Undamped relativistic mode
         self.get_ldamping2()
       else:
-        self.k2 = bisect(self.__bsrs_kin__,self.k0,2*self.k0)
-        omega2 = self.epw_kinetic_dispersion(self.k2,target='omega')
-        self.ldamping2 = -np.imag(omega2)
-        self.omega2 = np.real(omega2)
+        if undamped:
+          self.k2 = bisect(self.__bsrs_kinu__,self.k0,2*self.k0)
+          self.omega2 = self.undamped_dispersion(self.k2) # Undamped mode
+          self.get_ldamping2()
+        else:
+          self.k2 = bisect(self.__bsrs_kin__,self.k0,2*self.k0)
+          omega2 = self.epw_kinetic_dispersion(self.k2,target='omega')
+          self.ldamping2 = -np.imag(omega2)
+          self.omega2 = np.real(omega2)
 
     # Lastly set raman quantities by matching conditions
     self.k1 = self.k0 - self.k2
@@ -121,6 +126,9 @@ class srs_forest(laser_forest):
     return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
   def __bsrs_kinu__(self,k2):
     omega_ek = self.undamped_dispersion(k2) # Undamped mode
+    return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
+  def __bsrs_kinr__(self,k2):
+    omega_ek = self.relativistic_dispersion(k2) # Undamped mode
     return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
 
   # Raman collisional damping
@@ -142,8 +150,6 @@ class srs_forest(laser_forest):
     if self.mode == 'fluid' and force_kinetic:
       omega = self.epw_kinetic_dispersion(self.k2,target='omega')
       self.ldamping2 = -np.imag(omega)
-      #omega_ek = self.undamped_dispersion(self.k2)
-      #self.ldamping2 = self.epw_landau_damping(omega_ek,self.k2,'kinetic',self.relativistic)
     else:
       self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,self.mode,self.relativistic)
 
@@ -181,7 +187,10 @@ class srs_forest(laser_forest):
         self.gain_coeff = 2*Kf/(sqr(c)*self.vthe*np.sqrt(prefac*np.abs(self.k0*self.k1*self.k2)))
     elif self.mode == 'kinetic':
       if self.sdl:
-        perm = self.kinetic_permittivity(self.omega2,self.k2,full=False)
+        if self.relativistic:
+          perm = self.relativistic_permittivity(self.omega2,self.k2)
+        else:
+          perm = self.kinetic_permittivity(self.omega2,self.k2,full=False)
         fac = -np.imag(1/perm)
         self.gain_coeff = 4*sqr(K)*self.omega2*fac/\
             (pwr(sc.c,4)*sqr(self.ompe)*np.abs(self.k0*self.k1))
