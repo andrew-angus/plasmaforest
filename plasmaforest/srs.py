@@ -136,10 +136,16 @@ class srs_forest(laser_forest):
     self.cdamping2 = self.epw_coll_damping(self.omega2)
 
   # EPW Landau damping
-  def get_ldamping2(self):
+  def get_ldamping2(self,force_kinetic:Optional[bool]=False):
     if self.omega2 is None or self.k2 is None:
       self.resonance_solve()
-    self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,self.mode,self.relativistic)
+    if self.mode == 'fluid' and force_kinetic:
+      omega = self.epw_kinetic_dispersion(self.k2,target='omega')
+      self.ldamping2 = -np.imag(omega)
+      #omega_ek = self.undamped_dispersion(self.k2)
+      #self.ldamping2 = self.epw_landau_damping(omega_ek,self.k2,'kinetic',self.relativistic)
+    else:
+      self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,self.mode,self.relativistic)
 
   def get_gain_coeff(self):
     if self.ompe is None:

@@ -218,22 +218,16 @@ class wave_forest(forest):
       # First order approximation of non-relativistic landau damping
       # Calculated according to Swanson - Plasma Waves (2012)
       else:
-        """
-        vthe1d = self.vthe/np.sqrt(2)
-        dk = k*vthe1d/omega
-        omega2 = omega*(1+3/2*sqr(dk))
-        print(self.ompe,omega,omega2)
-        gamma = np.sqrt(np.pi/8)*omega2/pwr(dk,3)\
-            *np.exp(-0.5*sqr(omega2/(k*vthe1d))) # lpse
-        print(f'{gamma:0.3e}')
-        """
         gamma = np.sqrt(np.pi)*sqr(self.ompe*omega)/pwr(k*self.vthe,3)\
             *np.exp(-sqr(omega/(k*self.vthe)))
         #K = k*self.dbye
         #gamma = omega*np.exp(-0.5*(3+1/sqr(K)))*np.sqrt(np.pi/8)*(1-4.5*sqr(K))/np.abs(pwr(K,3))
     elif mode == 'kinetic':
       eps = self.kinetic_permittivity(omega,k,full=False)
-      depsdom = 2*omega/sqr(self.ompe) # Fluid approximation
+      #depsdom = 2*omega/sqr(self.ompe) # Fluid approximation
+      step = 1e-6*omega # Relative step
+      depsdom = np.real(self.kinetic_permittivity(omega+step,k,full=False)\
+          -self.kinetic_permittivity(omega-step,k,full=False))/(2*step) # Central differences
       gamma = np.imag(eps)/depsdom
 
     return gamma
