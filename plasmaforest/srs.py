@@ -4,6 +4,8 @@ from .core import *
 from .laser import *
 from .wave import *
 from scipy.optimize import bisect
+from scipy.interpolate import PchipInterpolator
+from scipy.integrate import solve_bvp
 
 # SRS forest, three modes: laser, raman, epw
 # Currently direct backscatter only
@@ -184,7 +186,7 @@ class srs_forest(laser_forest):
         nueff = np.sqrt(np.maximum(-sqr(res)+sqr(nu2),0))/(sqr(res)+sqr(nu2))
         self.gain_coeff = 2*sqr(K)*nueff/(pwr(sc.c,4)*np.abs(self.k0*self.k1))
       else:
-        self.gain_coeff = 2*Kf/(sqr(c)*self.vthe*np.sqrt(prefac*np.abs(self.k0*self.k1*self.k2)))
+        self.gain_coeff = 2*Kf/(sqr(sc.c)*self.vthe*np.sqrt(prefac*np.abs(self.k0*self.k1*self.k2)))
     elif self.mode == 'kinetic':
       if self.sdl:
         if self.relativistic:
@@ -197,7 +199,64 @@ class srs_forest(laser_forest):
       else:
         raise Exception("Gain coefficient calc for non-SDL kinetic case not implemented.")
 
+  # 1D BVP solve with parent forest setting resonance conditions
+  def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101):
 
+    # Establish density profile
+    x = np.linspace(xrange[0],xrange[1],points)
+    if ntype == 'linear':
+      m = (nrange[1]-nrange[0])/(xrange[1]-xrange[0])
+      n = np.minimum(nrange[0] + np.maximum(x - xrange[0], 0) * m, nrange[1])
+    elif ntype == 'exp':
+      dr = abs(xrange[0]-xrange[1])
+      Ln = dr/np.log(nrange[1]/nrange[0])
+      r = abs(x-xrange[1])
+      n = nrange[1]*np.exp(-r/Ln)
+    else:
+      raise Exception("ntype must be one of \'linear\' or \'exp\'")
+    
+    # Resonance solve on parent forest if not already
+    if self.omega2 is None or self.omega1 is None \
+        or self.k2 is None or self.k1 is None:
+      self.resonance_solve(undamped=True)
 
+    # Setup list of srs forests for each density relevant to parent forest
+    birches = []
+    for i in range(points):
+      birches.append(srs_forest(self.mode,self.sdl,self.relativistic,\
+                                self.lambda0,self.I0,self.ndim,\
+                                electrons=self.electrons,nion=self.nion,\
+                                Te=self.Te,ne=n[i]))
+      birches[i].set_frequencies(self.omega1,self.omega2)
+      birches[i].get_k0()
+      k1 = -birches[i].emw_dispersion(self.omega1,target='k')
+      birches[i].set_wavenumbers(k1,birches[i].k0-k1)
+      birches[i].get_gain_coeff()
 
+    # Initialise wave action arrays
+    I0 = np.ones_like(x)*self.I0/self.omega0
+    I1 = np.ones_like(x)*I1_seed/self.omega1
+    I0bc = I0[0]; I1bc = I1[-1]
 
+    # Setup interpolation array for wave action gain
+    gr = np.array([i.gain_coeff for i in birches])
+    omprod = self.omega0*self.omega1
+    grf = PchipInterpolator(x,gr*omprod)
+    
+    # ODE evolution functions
+    def Fsrs(xi,Iin):
+      I0i, I1i = Iin
+      gri = grf(xi)
+      f1 = -gri*I0i*I1i
+      f2 = -gri*I0i*I1i
+      return np.vstack((f1,f2))
+    def bc(ya,yb):
+      return np.array([np.abs(ya[0]-I0bc),np.abs(yb[1]-I1bc)])
+
+    # Solve bvp and convert to intensity for return
+    y = np.vstack((I0,I1))
+    res = solve_bvp(Fsrs,bc,x,y,tol=1e-10)
+    I0 = res.sol(x)[0]*self.omega0
+    I1 = res.sol(x)[1]*self.omega1
+
+    return x,n,I0,I1,gr
