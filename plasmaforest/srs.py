@@ -6,6 +6,7 @@ from .wave import *
 from scipy.optimize import bisect
 from scipy.interpolate import PchipInterpolator
 from scipy.integrate import solve_bvp
+import matplotlib.pyplot as plt
 
 # SRS forest, three modes: laser, raman, epw
 # Currently direct backscatter only
@@ -200,7 +201,7 @@ class srs_forest(laser_forest):
         raise Exception("Gain coefficient calc for non-SDL kinetic case not implemented.")
 
   # 1D BVP solve with parent forest setting resonance conditions
-  def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101):
+  def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101,plots=False):
 
     # Establish density profile
     x = np.linspace(xrange[0],xrange[1],points)
@@ -258,5 +259,24 @@ class srs_forest(laser_forest):
     res = solve_bvp(Fsrs,bc,x,y,tol=1e-10)
     I0 = res.sol(x)[0]*self.omega0
     I1 = res.sol(x)[1]*self.omega1
+
+    if plots:
+      fig, axs = plt.subplots(2,2,sharex='col',figsize=(12,12/1.618034))
+      axs[0,0].plot(x*1e6,n/self.nc0)
+      axs[0,0].set_ylabel('n_e/n_c')
+      axs[0,1].plot(x*1e6,gr*omprod)
+      axs[0,1].set_ylabel('Wave Gain [m/Ws^2]')
+      axs[1,0].semilogy(x*1e6,I0)
+      axs[1,0].set_ylabel('I0 [W/m^2]')
+      axs[1,0].set_xlabel('x [um]')
+      axs[1,1].semilogy(x*1e6,I1)
+      axs[1,1].set_ylabel('I1 [W/m^2]')
+      axs[1,1].set_xlabel('x [um]')
+      fig.suptitle(f'Mode: {self.mode}; SDL: {self.sdl}; Relativistic: {self.relativistic}; '\
+          +f'\nne ref: {self.ne:0.2e} m^-3; Te: {self.Te:0.2e} K; '\
+          +f'\nI00: {self.I0:0.2e} W/m^2; lambda0: {self.lambda0:0.2e} m')
+      plt.tight_layout()
+      plt.show()
+
 
     return x,n,I0,I1,gr
