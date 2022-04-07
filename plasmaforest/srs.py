@@ -203,6 +203,10 @@ class srs_forest(laser_forest):
   # 1D BVP solve with parent forest setting resonance conditions
   def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101,plots=False):
 
+    # Check SDL flag true
+    if not self.sdl:
+      raise Exception('bvp_solve only works in strong damping limit; self.sdl must be True.')
+
     # Establish density profile
     x = np.linspace(xrange[0],xrange[1],points)
     if ntype == 'linear':
