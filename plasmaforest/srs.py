@@ -231,7 +231,8 @@ class srs_forest(laser_forest):
       birches.append(srs_forest(self.mode,self.sdl,self.relativistic,\
                                 self.lambda0,self.I0,self.ndim,\
                                 electrons=self.electrons,nion=self.nion,\
-                                Te=self.Te,ne=n[i]))
+                                Te=self.Te,ne=n[i],Ti=self.Ti,ni=self.ni,\
+                                Z=self.Z,mi=self.mi))
       birches[i].set_frequencies(self.omega1,self.omega2)
       birches[i].get_k0()
       k1 = -birches[i].emw_dispersion(self.omega1,target='k')
