@@ -261,7 +261,7 @@ class srs_forest(laser_forest):
 
     # Solve bvp and convert to intensity for return
     y = np.vstack((I0,I1))
-    res = solve_bvp(Fsrs,bc,x,y,tol=1e-10)
+    res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
     I0 = res.sol(x)[0]*self.omega0
     I1 = res.sol(x)[1]*self.omega1
 
