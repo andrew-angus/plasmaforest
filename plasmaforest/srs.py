@@ -35,15 +35,18 @@ class srs_forest(laser_forest):
     self.damping1 = None
     self.cdamping2 = None
     self.ldamping2 = None
+    self.vg2 = None
 
   def set_relativistic(self,relativistic:bool):
     self.relativistic = relativistic
     self.ldamping2 = None
+    self.vg2 = None
 
   def set_strong_damping_limit(self,sdl:bool):
     self.sdl = sdl
     self.gain_coeff = None
     self.growth_rate = None
+
   # Update nullfications on inherited set routines
   def set_ndim(self,*args,**kwargs):
     super().set_ndim(*args,**kwargs)
@@ -63,6 +66,8 @@ class srs_forest(laser_forest):
     self.damping1 = None
     self.cdamping2 = None
     self.ldamping2 = None
+    self.vg1 = None
+    self.vg2 = None
   def set_ions(self,*args,**kwargs):
     super().set_ions(*args,**kwargs)
     self.damping1 = None
@@ -118,7 +123,6 @@ class srs_forest(laser_forest):
     self.k1 = self.k0 - self.k2
     self.omega1 = self.omega0 - self.omega2
 
-
   # Raman dispersion residual from k2
   def __bsrs__(self,k2):
     omega_ek = np.real(self.bohm_gross(k2,target='omega'))
@@ -156,6 +160,26 @@ class srs_forest(laser_forest):
     else:
       self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,self.mode,self.relativistic)
 
+  # Raman group velocity
+  def get_vg1(self):
+    if self.omega1 is None or self.k1 is None:
+      self.resonance_solve()
+    self.vg1 = self.emw_group_velocity(self.omega1,self.k1)
+
+  # EPW group velocity
+  def get_vg2(self):
+    if self.omega2 is None or self.k2 is None:
+      self.resonance_solve()
+    if mode == 'fluid':
+      self.vg2 = self.bohm_gross_group_velocity(self.omega2,self.k2)
+    elif mode == 'kinetic':
+      if relativistic:
+        raise Exception('Relativistic EPW group velocity calc not implemented')
+      else:
+        self.vg2 = self.kinetic_group_velocity(self.omega2,self.k2)
+    else:
+      raise Exception('Mode must be one of fluid or kinetic')
+
   def get_gain_coeff(self):
     if self.ompe is None:
       self.get_omp(species='e')
@@ -187,7 +211,8 @@ class srs_forest(laser_forest):
         nueff = np.sqrt(np.maximum(-sqr(res)+sqr(nu2),0))/(sqr(res)+sqr(nu2))
         self.gain_coeff = 2*sqr(K)*nueff/(pwr(sc.c,4)*np.abs(self.k0*self.k1))
       else:
-        self.gain_coeff = 2*Kf/(sqr(sc.c)*self.vthe*np.sqrt(prefac*np.abs(self.k0*self.k1*self.k2)))
+        self.gain_coeff = 2*Kf/(sqr(sc.c)*self.vthe*np.sqrt(prefac*\
+            np.abs(self.k0*self.k1*self.k2)))
     elif self.mode == 'kinetic':
       if self.sdl:
         if self.relativistic:
@@ -198,7 +223,12 @@ class srs_forest(laser_forest):
         self.gain_coeff = 4*sqr(K)*self.omega2*fac/\
             (pwr(sc.c,4)*sqr(self.ompe)*np.abs(self.k0*self.k1))
       else:
-        raise Exception("Gain coefficient calc for non-SDL kinetic case not implemented.")
+        if self.vg2 is None:
+          self.get_vg2()
+        # Wave action formulation
+        self.gain_coeff = sqr(self.ompe)*self.k2/(sqr(sc.c)*np.sqrt(2*sc.m_e*\
+            self.omega2*self.k0*np.abs(self.k1)*self.ne*self.vg2))
+        
 
   # 1D BVP solve with parent forest setting resonance conditions
   def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101,plots=False):

@@ -124,6 +124,10 @@ class wave_forest(forest):
     prefac = 0.5*gamma
     return prefac*sqr(self.vthe)*k/omega
 
+  # Kinetic EPW group velocity
+  def kinetic_group_velocity(self,omega:floats,k:floats):
+    return self.__depsdkkin__(omega,k)/self.__depsdomkin__(omega,k)
+
   # General EMW critical density
   def emw_nc(self,omega:floats) -> floats:
     return sc.epsilon_0*sc.m_e*sqr(omega/sc.e)
@@ -225,11 +229,22 @@ class wave_forest(forest):
         eps = self.kinetic_permittivity(omega,k,full=False)
         #depsdom = 2*omega/sqr(self.ompe) # Fluid limit
         step = 1e-6*omega # Relative step
-        depsdom = np.real(self.kinetic_permittivity(omega+step,k,full=False)\
-            -self.kinetic_permittivity(omega-step,k,full=False))/(2*step) # Central differences
+        depsdom = self.__depsdomkin__(omega,k)
         gamma = np.imag(eps)/depsdom
 
     return gamma
+
+  # Derivative of real kinetic permittivity wrt omega
+  def __depsdomkin__(self,omega:float,k:float,step:Optional[float]=1e-6):
+    step *= omega # Relative step
+    return np.real(self.kinetic_permittivity(omega+step,k,full=False)\
+        -self.kinetic_permittivity(omega-step,k,full=False))/(2*step) # Central differences
+
+  # Derivative of real kinetic permittivity wrt k
+  def __depsdkkin__(self,omega:float,k:float,step:Optional[float]=1e-6):
+    step *= k # Relative step
+    return np.real(self.kinetic_permittivity(omega,k+step,full=False)\
+        -self.kinetic_permittivity(omega,k-step,full=False))/(2*step) # Central differences
 
   # Solve kinetic dispersion to find natural omega/k from respective part
   def epw_kinetic_dispersion(self,arg:floats,target:str):
