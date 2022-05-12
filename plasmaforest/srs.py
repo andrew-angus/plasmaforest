@@ -170,10 +170,10 @@ class srs_forest(laser_forest):
   def get_vg2(self):
     if self.omega2 is None or self.k2 is None:
       self.resonance_solve()
-    if mode == 'fluid':
+    if self.mode == 'fluid':
       self.vg2 = self.bohm_gross_group_velocity(self.omega2,self.k2)
-    elif mode == 'kinetic':
-      if relativistic:
+    elif self.mode == 'kinetic':
+      if self.relativistic:
         raise Exception('Relativistic EPW group velocity calc not implemented')
       else:
         self.vg2 = self.kinetic_group_velocity(self.omega2,self.k2)

@@ -126,7 +126,7 @@ class wave_forest(forest):
 
   # Kinetic EPW group velocity
   def kinetic_group_velocity(self,omega:floats,k:floats):
-    return self.__depsdkkin__(omega,k)/self.__depsdomkin__(omega,k)
+    return -self.__depsdkkin__(omega,k)/self.__depsdomkin__(omega,k)
 
   # General EMW critical density
   def emw_nc(self,omega:floats) -> floats:
