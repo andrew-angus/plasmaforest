@@ -294,12 +294,13 @@ class srs_forest(laser_forest):
     res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
     I0 = res.sol(x)[0]*self.omega0
     I1 = res.sol(x)[1]*self.omega1
+    gr *= omprod
 
     if plots:
       fig, axs = plt.subplots(2,2,sharex='col',figsize=(12,12/1.618034))
       axs[0,0].plot(x*1e6,n/self.nc0)
       axs[0,0].set_ylabel('n_e/n_c')
-      axs[0,1].plot(x*1e6,gr*omprod)
+      axs[0,1].plot(x*1e6,gr)
       axs[0,1].set_ylabel('Wave Gain [m/Ws^2]')
       axs[1,0].semilogy(x*1e6,I0)
       axs[1,0].set_ylabel('I0 [W/m^2]')
