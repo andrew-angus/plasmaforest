@@ -22,10 +22,11 @@ class wave_forest(forest):
     if self.ompe is None:
       self.get_omp(species='e')
     if target == 'omega':
-      return np.sqrt(sqr(self.ompe) + sqr(sc.c*arg))
+      #return np.sqrt(sqr(self.ompe) + sqr(sc.c*arg))
+      return self.ompe*np.sqrt(1 + sqr(sc.c*arg/self.ompe))
     elif target == 'k':
-      return np.sqrt((sqr(arg) - sqr(self.ompe))\
-          /sqr(sc.c))
+      #return np.sqrt((sqr(arg) - sqr(self.ompe))/sqr(sc.c))
+      return arg/sc.c*np.sqrt(1 - sqr(self.ompe/arg))
     else:
       raise Exception("target must be one of \'omega\' or \'k\'.")
 
@@ -47,10 +48,12 @@ class wave_forest(forest):
     gamma = (2+self.ndim)/self.ndim
     prefac = 0.5*gamma
     if target == 'omega':
-      return np.sqrt(sqr(self.ompe) + prefac*sqr(self.vthe*arg))
+      #return np.sqrt(sqr(self.ompe) + prefac*sqr(self.vthe*arg))
+      return self.ompe*np.sqrt(1 + prefac*sqr(self.vthe*arg/self.ompe))
     elif target == 'k':
-      return np.sqrt((sqr(arg) - sqr(self.ompe))\
-          /(prefac*sqr(self.vthe)))
+      #return np.sqrt((sqr(arg) - sqr(self.ompe))\
+      #    /(prefac*sqr(self.vthe)))
+      return arg/self.vthe*np.sqrt((1 - sqr(self.ompe/arg))/prefac)
     else:
       raise Exception("target must be one of \'omega\' or \'k\'.")
 
