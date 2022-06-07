@@ -200,7 +200,7 @@ class srs_forest(laser_forest):
     if self.mode == 'fluid':
       if self.sdl:
         if self.ldamping2 is None:
-          self.get_ldamping2()
+          self.get_ldamping2(force_kinetic=True)
         res = self.bohm_gross_res(self.omega2,self.k2)*0.5*self.omega2
         if self.nion > 0:
           if self.cdamping2 is None:
@@ -208,7 +208,8 @@ class srs_forest(laser_forest):
           nu2 = np.sum(self.cdamping2) + self.ldamping2
         else:
           nu2 = self.ldamping2
-        nueff = np.sqrt(np.maximum(-sqr(res)+sqr(nu2),0))/(sqr(res)+sqr(nu2))
+        #nueff = np.sqrt(np.maximum(-sqr(res)+sqr(nu2),0))/(sqr(res)+sqr(nu2))
+        nueff = nu2/(sqr(res)+sqr(nu2))
         self.gain_coeff = 2*sqr(K)*nueff/(pwr(sc.c,4)*np.abs(self.k0*self.k1))
       else:
         self.gain_coeff = 2*Kf/(sqr(sc.c)*self.vthe*np.sqrt(prefac*\
@@ -228,6 +229,30 @@ class srs_forest(laser_forest):
         # Wave action formulation
         self.gain_coeff = sqr(self.ompe)*self.k2/(sqr(sc.c)*np.sqrt(2*sc.m_e*\
             self.omega2*self.k0*np.abs(self.k1)*self.ne*self.vg2))
+
+  # Get undamped infinite homogeneous growth rate
+  def get_gamma0(self):
+    fac = sc.e*self.k2*self.ompe*np.sqrt(1/\
+        (8*self.omega0*self.omega1*self.omega2*sc.epsilon_0*self.k0))/(sc.c*sc.m_e)
+    self.gamma0 = fac*np.sqrt(self.I0)
+
+  # Get damped infinite homogeneous growth rate
+  def get_gamma(self):
+    if self.gamma0 is None:
+      self.get_gamma0()
+    if self.ldamping2 is None:
+      self.get_ldamping2()
+    if self.cdamping2 is None:
+      self.get_cdamping2()
+    if self.damping1 is None:
+      self.get_damping1()
+    nu1 = np.sum(self.damping1)
+    nu2 = self.ldamping2 + np.sum(self.cdamping2)
+    self.gamma = np.sqrt((nu1-nu2)**2/4+self.gamma0**2)-nu1/2-nu2/2
+
+  # Get Rosenbluth coefficient
+  #def get_rosenbluth_coeff(self):
+
         
 
   # 1D BVP solve with parent forest setting resonance conditions
@@ -313,6 +338,5 @@ class srs_forest(laser_forest):
           +f'\nI00: {self.I0:0.2e} W/m^2; lambda0: {self.lambda0:0.2e} m')
       plt.tight_layout()
       plt.show()
-
 
     return x,n,I0,I1,gr
