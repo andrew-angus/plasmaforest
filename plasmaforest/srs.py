@@ -36,11 +36,16 @@ class srs_forest(laser_forest):
     self.cdamping2 = None
     self.ldamping2 = None
     self.vg2 = None
+    self.gamma0 = None
+    self.gamma = None
+    self.rosenbluth = None
 
   def set_relativistic(self,relativistic:bool):
     self.relativistic = relativistic
     self.ldamping2 = None
     self.vg2 = None
+    self.gamma = None
+    self.rosenbluth = None
 
   def set_strong_damping_limit(self,sdl:bool):
     self.sdl = sdl
@@ -57,6 +62,9 @@ class srs_forest(laser_forest):
     self.damping1 = None
     self.cdamping2 = None
     self.ldamping2 = None
+    self.gamma0 = None
+    self.gamma = None
+    self.rosenbluth = None
   def set_electrons(self,*args,**kwargs):
     super().set_electrons(*args,**kwargs)
     self.omega1 = None
@@ -68,12 +76,19 @@ class srs_forest(laser_forest):
     self.ldamping2 = None
     self.vg1 = None
     self.vg2 = None
+    self.gamma0 = None
+    self.gamma = None
+    self.rosenbluth = None
   def set_ions(self,*args,**kwargs):
     super().set_ions(*args,**kwargs)
     self.damping1 = None
     self.cdamping2 = None
+    self.gamma = None
   def set_intensity(self,*args,**kwargs):
     super().set_intensity(*args,**kwargs)
+    self.gamma0 = None
+    self.gamma = None
+    self.rosenbluth = None
 
   # Set wavenumbers and frequencies manually
   def set_wavenumbers(self,k1:float,k2:float):
@@ -81,6 +96,9 @@ class srs_forest(laser_forest):
     self.k1 = k1
     self.k2 = k2
     self.ldamping2 = None
+    self.gamma0 = None
+    self.gamma = None
+    self.rosenbluth = None
   def set_frequencies(self,omega1:float,omega2:float):
     # Set attributes
     self.omega1 = omega1
@@ -88,6 +106,9 @@ class srs_forest(laser_forest):
     self.damping1 = None
     self.cdamping2 = None
     self.ldamping2 = None
+    self.gamma0 = None
+    self.gamma = None
+    self.rosenbluth = None
 
   # Get matching wavenumbers and frequencies by either fluid or kinetic dispersion
   def resonance_solve(self,undamped:Optional[bool]=False):
@@ -244,7 +265,10 @@ class srs_forest(laser_forest):
 
     fac = sc.e*self.k2*self.ompe*np.sqrt(1/\
         (8*self.omega0*self.omega1*self.omega2*sc.epsilon_0*self.k0))/(sc.c*sc.m_e)
-    self.gamma0 = fac*np.sqrt(self.I0)
+    #self.gamma0 = fac*np.sqrt(self.I0)
+    self.get_vos0()
+    self.gamma0 = self.k2*self.vos0/4*self.ompe/np.sqrt(self.omega1*self.omega2)
+
 
   # Get damped infinite homogeneous growth rate
   def get_gamma(self):
@@ -261,9 +285,18 @@ class srs_forest(laser_forest):
     self.gamma = np.sqrt((nu1-nu2)**2/4+self.gamma0**2)-nu1/2-nu2/2
 
   # Get Rosenbluth coefficient
-  #def get_rosenbluth_coeff(self):
-
-        
+  def get_rosenbluth(self,gradn):
+    if self.gamma0 is None:
+      self.get_gamma0()
+    if self.vg1 is None:
+      self.get_vg1()
+    if self.vg2 is None:
+      self.get_vg2()
+    if self.vthe is None:
+      self.get_vth(species='e')
+    dkmis = gradn*-0.5*sqr(sc.e)/(sc.m_e*sc.epsilon_0)*\
+        (1/(sc.c**2*self.k0)-2/(3*self.vthe**2*self.k2)-1/(sc.c**2*self.k1))
+    self.rosenbluth = 2*np.pi*sqr(self.gamma0)/np.abs(self.vg1*self.vg2*dkmis)
 
   # 1D BVP solve with parent forest setting resonance conditions
   def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101,plots=False):

@@ -185,12 +185,22 @@ print(f'kinetic \\omega_1 [1/s]: {birch.omega1:0.3e}')
 print(f'kinetic \\omega_2 [1/s]: {birch.omega2:0.3e}')
 print(f'kinetic k_1 [1/m]: {birch.k1:0.3e}')
 print(f'kinetic k_2 [1/m]: {birch.k2:0.3e}')
-print(f'Kinetic ldamping2 [1/s]: {birch.ldamping2:0.3e}')
 assert(birch.emw_dispersion_res(birch.omega1,birch.k1) < 1e-9)
 real_assert(birch.omega1,3.28e15,1e14)
 real_assert(birch.omega2,2.086e15,1e14)
 real_assert(birch.k2,26.35e6,1e6)
-real_assert(birch.ldamping2,64.47e12,1e12)
+print(f'Kinetic ldamping2 [1/s]: {birch.ldamping2:0.3e}')
+real_assert(birch.ldamping2,64.47e12,1e13)
+
+# Undamped infinite homogeneous growth rate
+birch.get_gamma0()
+print(f'gamma_0 [1/s]: {birch.gamma0:0.3e}')
+real_assert(birch.gamma0,17.7e12,1e12)
+
+# EPW group velocity
+birch.get_vg2()
+print(f'v_g2 [m/s]: {birch.vg2:0.3e}')
+real_assert(birch.vg2,29.16e6,1e7)
 
 # Final statement
 print('All health checks complete. What a happy forest.\n')
