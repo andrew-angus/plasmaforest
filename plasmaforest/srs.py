@@ -232,6 +232,16 @@ class srs_forest(laser_forest):
 
   # Get undamped infinite homogeneous growth rate
   def get_gamma0(self):
+    if self.ompe is None:
+      self.get_omp(species='e')
+    if self.k0 is None:
+      self.get_k0()
+    if self.omega0 is None:
+      self.get_omega0()
+    if self.k1 is None or self.k2 is None \
+        or self.omega1 is None or self.omega2 is None:
+      self.resonance_solve()
+
     fac = sc.e*self.k2*self.ompe*np.sqrt(1/\
         (8*self.omega0*self.omega1*self.omega2*sc.epsilon_0*self.k0))/(sc.c*sc.m_e)
     self.gamma0 = fac*np.sqrt(self.I0)
@@ -322,6 +332,8 @@ class srs_forest(laser_forest):
     gr *= omprod
 
     if plots:
+      if self.nc0 is None:
+        self.get_nc0()
       fig, axs = plt.subplots(2,2,sharex='col',figsize=(12,12/1.618034))
       axs[0,0].plot(x*1e6,n/self.nc0)
       axs[0,0].set_ylabel('n_e/n_c')
