@@ -299,7 +299,8 @@ class srs_forest(laser_forest):
     self.rosenbluth = 2*np.pi*sqr(self.gamma0)/np.abs(self.vg1*self.vg2*dkmis)
 
   # 1D BVP solve with parent forest setting resonance conditions
-  def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101,plots=False):
+  def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101,\
+      plots=False,pump_depletion=True):
 
     # Check SDL flag true
     if not self.sdl:
@@ -347,21 +348,38 @@ class srs_forest(laser_forest):
     omprod = self.omega0*self.omega1
     grf = PchipInterpolator(x,gr*omprod)
     
-    # ODE evolution functions
-    def Fsrs(xi,Iin):
-      I0i, I1i = Iin
-      gri = grf(xi)
-      f1 = -gri*I0i*I1i
-      f2 = -gri*I0i*I1i
-      return np.vstack((f1,f2))
-    def bc(ya,yb):
-      return np.array([np.abs(ya[0]-I0bc),np.abs(yb[1]-I1bc)])
+    if pump_depletion:
+      # ODE evolution functions
+      def Fsrs(xi,Iin):
+        I0i, I1i = Iin
+        gri = grf(xi)
+        f1 = -gri*I0i*I1i
+        f2 = -gri*I0i*I1i
+        return np.vstack((f1,f2))
+      def bc(ya,yb):
+        return np.array([np.abs(ya[0]-I0bc),np.abs(yb[1]-I1bc)])
 
-    # Solve bvp and convert to intensity for return
-    y = np.vstack((I0,I1))
-    res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
-    I0 = res.sol(x)[0]*self.omega0
-    I1 = res.sol(x)[1]*self.omega1
+      # Solve bvp and convert to intensity for return
+      y = np.vstack((I0,I1))
+      res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
+      I0 = res.sol(x)[0]*self.omega0
+      I1 = res.sol(x)[1]*self.omega1
+    else:
+      I0cons = I0[0]
+      def Fsrs(xi,Iin):
+        I1i = Iin
+        gri = grf(xi)
+        f1 = -gri*I0cons*I1i
+        return f1
+      def bc(ya,yb):
+        return np.array([np.abs(yb[0]-I1bc)])
+
+      # Solve bvp and convert to intensity for return
+      y = I1[np.newaxis,:]
+      res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
+      I0 *= self.omega0
+      I1 = res.sol(x)[0]*self.omega1
+
     gr *= omprod
 
     if plots:
