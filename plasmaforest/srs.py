@@ -40,6 +40,7 @@ class srs_forest(laser_forest):
     self.gamma = None
     self.rosenbluth = None
 
+  # Set relativistic routine with nullifications
   def set_relativistic(self,relativistic:bool):
     self.relativistic = relativistic
     self.ldamping2 = None
@@ -47,6 +48,7 @@ class srs_forest(laser_forest):
     self.gamma = None
     self.rosenbluth = None
 
+  # Set strong damping limit routine with nullifications
   def set_strong_damping_limit(self,sdl:bool):
     self.sdl = sdl
     self.gain_coeff = None
@@ -156,7 +158,7 @@ class srs_forest(laser_forest):
     omega_ek = self.undamped_dispersion(k2) # Undamped mode
     return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
   def __bsrs_kinr__(self,k2):
-    omega_ek = self.relativistic_dispersion(k2) # Undamped mode
+    omega_ek = self.relativistic_dispersion(k2) # Relativistic dispersion
     return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
 
   # Raman collisional damping
@@ -201,7 +203,13 @@ class srs_forest(laser_forest):
     else:
       raise Exception('Mode must be one of fluid or kinetic')
 
+  # Get k1 by EMW dispersion
+  #def get_k1(self):
+
+  # SRS gain coefficient calculations for various cases
   def get_gain_coeff(self):
+
+    # Check attributes set
     if self.ompe is None:
       self.get_omp(species='e')
     if self.vthe is None:
@@ -213,41 +221,53 @@ class srs_forest(laser_forest):
     if self.omega1 is None or self.omega2 is None \
         or self.k1 is None or self.k2 is None:
       self.resonance_solve()
+
+    # Calculate constants
     K = np.abs(self.k2)*sqr(self.ompe)\
         /np.sqrt(8*sc.m_e*self.ne*self.omega0*self.omega1*self.omega2)
     gamma = (2+self.ndim)/self.ndim
     prefac = 0.5*gamma
     Kf = K/sqr(self.ompe)*np.abs(sqr(self.omega2)-prefac*sqr(self.vthe*self.k2))
+
+    # Get gain coefficent for each case
     if self.mode == 'fluid':
+
       if self.sdl:
         if self.ldamping2 is None:
           self.get_ldamping2(force_kinetic=True)
-        res = self.bohm_gross_res(self.omega2,self.k2)*0.5*self.omega2
         if self.nion > 0:
           if self.cdamping2 is None:
             self.get_cdamping2()
           nu2 = np.sum(self.cdamping2) + self.ldamping2
         else:
           nu2 = self.ldamping2
-        #nueff = np.sqrt(np.maximum(-sqr(res)+sqr(nu2),0))/(sqr(res)+sqr(nu2))
+
+        res = self.bohm_gross_res(self.omega2,self.k2)*0.5*self.omega2
         nueff = nu2/(sqr(res)+sqr(nu2))
         self.gain_coeff = 2*sqr(K)*nueff/(pwr(sc.c,4)*np.abs(self.k0*self.k1))
+        self.gain_coeff *= self.omega1*self.omega0
+
       else:
         self.gain_coeff = 2*Kf/(sqr(sc.c)*self.vthe*np.sqrt(prefac*\
             np.abs(self.k0*self.k1*self.k2)))
+
     elif self.mode == 'kinetic':
+
       if self.sdl:
+
         if self.relativistic:
           perm = self.relativistic_permittivity(self.omega2,self.k2)
         else:
           perm = self.kinetic_permittivity(self.omega2,self.k2,full=False)
+
         fac = -np.imag(1/perm)
         self.gain_coeff = 4*sqr(K)*self.omega2*fac/\
             (pwr(sc.c,4)*sqr(self.ompe)*np.abs(self.k0*self.k1))
+        self.gain_coeff *= self.omega1*self.omega0
+
       else:
         if self.vg2 is None:
           self.get_vg2()
-        # Wave action formulation
         self.gain_coeff = sqr(self.ompe)*self.k2/(sqr(sc.c)*np.sqrt(2*sc.m_e*\
             self.omega2*self.k0*np.abs(self.k1)*self.ne*self.vg2))
 
@@ -286,6 +306,8 @@ class srs_forest(laser_forest):
 
   # Get Rosenbluth coefficient
   def get_rosenbluth(self,gradn):
+
+    # Check relevant attributes assigned
     if self.gamma0 is None:
       self.get_gamma0()
     if self.vg1 is None:
@@ -294,8 +316,12 @@ class srs_forest(laser_forest):
       self.get_vg2()
     if self.vthe is None:
       self.get_vth(species='e')
+
+    # Gradient of wavenumber mismatch
     dkmis = gradn*-0.5*sqr(sc.e)/(sc.m_e*sc.epsilon_0)*\
         (1/(sc.c**2*self.k0)-2/(3*self.vthe**2*self.k2)-1/(sc.c**2*self.k1))
+
+    # Rosenbluth gain coefficient
     self.rosenbluth = 2*np.pi*sqr(self.gamma0)/np.abs(self.vg1*self.vg2*dkmis)
 
   # 1D BVP solve with parent forest setting resonance conditions
@@ -345,8 +371,7 @@ class srs_forest(laser_forest):
 
     # Setup interpolation array for wave action gain
     gr = np.array([i.gain_coeff for i in birches])
-    omprod = self.omega0*self.omega1
-    grf = PchipInterpolator(x,gr*omprod)
+    grf = PchipInterpolator(x,gr)
     
     if pump_depletion:
       # ODE evolution functions
@@ -380,7 +405,118 @@ class srs_forest(laser_forest):
       I0 *= self.omega0
       I1 = res.sol(x)[0]*self.omega1
 
-    gr *= omprod
+    if plots:
+      if self.nc0 is None:
+        self.get_nc0()
+      fig, axs = plt.subplots(2,2,sharex='col',figsize=(12,12/1.618034))
+      axs[0,0].plot(x*1e6,n/self.nc0)
+      axs[0,0].set_ylabel('n_e/n_c')
+      axs[0,1].plot(x*1e6,gr)
+      axs[0,1].set_ylabel('Wave Gain [m/Ws^2]')
+      axs[1,0].semilogy(x*1e6,I0)
+      axs[1,0].set_ylabel('I0 [W/m^2]')
+      axs[1,0].set_xlabel('x [um]')
+      axs[1,1].semilogy(x*1e6,I1)
+      axs[1,1].set_ylabel('I1 [W/m^2]')
+      axs[1,1].set_xlabel('x [um]')
+      fig.suptitle(f'Mode: {self.mode}; SDL: {self.sdl}; Relativistic: {self.relativistic}; '\
+          +f'\nne ref: {self.ne:0.2e} m^-3; Te: {self.Te:0.2e} K; '\
+          +f'\nI00: {self.I0:0.2e} W/m^2; lambda0: {self.lambda0:0.2e} m')
+      plt.tight_layout()
+      plt.show()
+
+    return x,n,I0,I1,gr
+
+  # Extension of BVP solver to include wave mixing from noise sources
+  '''
+  def wave_mixing_solve(self,I1_noise:float,xrange:tuple, \
+      nrange:tuple,ntype:str,points=101,plots=False,\
+      om1_seed:Optional[float],I1_seed:Optional[float]=0.0):
+
+    # Check SDL flag true
+    if not self.sdl:
+      raise Exception('bvp_solve only works in strong damping limit; self.sdl must be True.')
+
+    # Establish density profile
+    x = np.linspace(xrange[0],xrange[1],points)
+    if ntype == 'linear':
+      m = (nrange[1]-nrange[0])/(xrange[1]-xrange[0])
+      n = np.minimum(nrange[0] + np.maximum(x - xrange[0], 0) * m, nrange[1])
+    elif ntype == 'exp':
+      dr = abs(xrange[0]-xrange[1])
+      Ln = dr/np.log(nrange[1]/nrange[0])
+      r = abs(x-xrange[1])
+      n = nrange[1]*np.exp(-r/Ln)
+    else:
+      raise Exception("ntype must be one of \'linear\' or \'exp\'")
+
+    # Copies of central forest for modified intitial properties
+    mixed = copy.deepcopy(self)
+    noise = copy.deepcopy(self)
+    
+    # N - 1 wave-mixing solves for noise from boundary plus mixed seed signal
+    for i in range(1,points):
+  
+      # Establish noise forest
+      noise.set_electrons(electrons=True,Te=self.Te,ne=n[i])
+      noise.resonance_solve()
+
+      # Establish seed forest
+      mixed.set_frequencies(om1_seed,self.omega0-om1seed)
+      k1 = emw_dispersion(om1_seed,target='k')
+      mixed.set_wavenumbers(k1,self.k0 + k1)
+
+      # Setup list of forests with different densities relevant to both mixed and noise
+      noises = []
+      mixers = []
+      for j in range(i+1):
+        noises[j].append(copy.deepcopy(noise))
+        noises[j].set_electrons(electrons=True,Te=self.Te,ne=n[j])
+        noises[j].get_k0()
+        k1 = noises[i].emw_dispersion(noise.omega1,target='k')
+        noises[j].set_wavenumbers(k1,noises[j].k0+k1)
+        noises[j].get_gain_coeff()
+
+        mixers[j].append(copy.deepcopy(mixed))
+        mixers[j].set_electrons(electrons=True,Te=self.Te,ne=n[j])
+        mixers[j].get_k0()
+        k1 = mixers[i].emw_dispersion(mixed.omega1,target='k')
+        mixers[j].set_wavenumbers(k1,mixers[j].k0+k1)
+        mixers[j].get_gain_coeff()
+
+      # Initialise wave action arrays
+      I0 = np.ones_like(x)*self.I0/self.omega0
+      I1 = np.ones_like(x)*I1_seed/mixed.omega1
+      I1n = np.ones_like(x)*I1_noise/noise.omega1
+      I0bc = I0[0]; I1bc = I1[-1]; I1nbc = I1n[-1]
+
+      # Setup interpolation array for wave action gain
+      gr = np.array([i.gain_coeff for i in mixers])
+      gr0 = np.array([i.gain_coeff for i in noises])
+      grf = PchipInterpolator(x,gr)
+      gr0f = PchipInterpolator(x,gr0)
+      
+      # ODE evolution functions
+      def Fsrs(xi,Iin):
+        I0i, I1i, I1ni = Iin
+        gri = grf(xi)
+        gr0i = grf0(xi)
+        f1 = -gri*I0i*I1i - gr0i*I0i*I1ni
+        f2 = -gri*I0i*I1i
+        f3 = -gr0i*I0i*I1ni
+        return np.vstack((f1,f2,f3))
+      def bc(ya,yb):
+        return np.array([np.abs(ya[0]-I0bc),np.abs(yb[1]-I1bc),np.abs(yb[2]-I1nbc)])
+
+      # Solve bvp and convert to intensity
+      y = np.vstack((I0,I1,I1n))
+      res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
+      I0 = res.sol(x)[0]*self.omega0
+      I1 = res.sol(x)[1]*mixed.omega1
+      I1n = res.sol(x)[2]*noise.omega1
+
+      # Update seed quantities for next iteration
+      #om1_seed = 
 
     if plots:
       if self.nc0 is None:
@@ -403,3 +539,4 @@ class srs_forest(laser_forest):
       plt.show()
 
     return x,n,I0,I1,gr
+  '''
