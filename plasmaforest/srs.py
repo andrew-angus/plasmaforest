@@ -429,6 +429,191 @@ class srs_forest(laser_forest):
     return x,n,I0,I1,gr
 
   # Extension of BVP solver to include wave mixing from noise sources
+  def wave_mixing_solve2(self,I1_noise:float,xrange:tuple, \
+      nrange:tuple,ntype:str,points=101,plots=False,pump_depletion=True,\
+      I1_seed:Optional[float]=0.0,om1_seed:Optional[float]=None):
+
+    # Check SDL flag true
+    if not self.sdl:
+      raise Exception('Non-SDL wave-mixing solve not implemented.')
+
+    # Establish density profile
+    x = np.linspace(xrange[0],xrange[1],points)
+    if ntype == 'linear':
+      m = (nrange[1]-nrange[0])/(xrange[1]-xrange[0])
+      n = np.minimum(nrange[0] + np.maximum(x - xrange[0], 0) * m, nrange[1])
+    elif ntype == 'exp':
+      dr = abs(xrange[0]-xrange[1])
+      Ln = dr/np.log(nrange[1]/nrange[0])
+      r = abs(x-xrange[1])
+      n = nrange[1]*np.exp(-r/Ln)
+    else:
+      raise Exception("ntype must be one of \'linear\' or \'exp\'")
+
+    # Resonance solve for each density point
+    print('resonance solve')
+    birches = []
+    for i in range(points):
+      birches.append(srs_forest(self.mode,self.sdl,self.relativistic,\
+                                self.lambda0,self.I0,self.ndim,\
+                                electrons=self.electrons,nion=self.nion,\
+                                Te=self.Te,ne=n[i],Ti=self.Ti,ni=self.ni,\
+                                Z=self.Z,mi=self.mi))
+      birches[i].resonance_solve()
+      birches[i].get_gain_coeff()
+
+    # Get interpolated functions
+    om0 = birches[0].omega0
+    om1res = np.array([i.omega1 for i in birches])
+    om1resf = PchipInterpolator(x,om1res)
+    nef = PchipInterpolator(x,n)
+    grres = np.array([i.gain_coeff for i in birches])
+    grresf = PchipInterpolator(x,grres)
+
+    # Non-resonant gain function
+    def gain(i,om1i):
+      birch = copy.deepcopy(self)
+      #ne = float(nef(xi))
+      ne = n[i]
+      birch.set_electrons(electrons=True,Te=birch.Te,ne=ne)
+      birch.set_frequencies(om1i,om0-om1i)
+      birch.get_k0()
+      k1 = birch.emw_dispersion(om1i,target='k')
+      birch.set_wavenumbers(k1,birch.k0+k1)
+      birch.get_gain_coeff()
+      return birch.gain_coeff
+
+    # Check om1_seed input
+    if om1_seed is None:
+      om1_seed = birches[-1].omega1
+      om1 = copy.deepcopy(om1res)
+      om1f = PchipInterpolator(x,om1)
+      I1_seed = 0.0
+      seed = False
+      omega1s = om1res
+    elif om1_seed <= 0.0:
+      raise Exception('Seed Raman frequency must be positive')
+    else:
+      om1 = np.ones_like(x)*om1_seed
+      om1f = PchipInterpolator(x,om1)
+      seed = True
+      omega1s = np.r_[om1res,np.array([om1_seed])]
+
+    # Initialise intensity arrays
+    I0 = np.ones_like(x)*self.I0/om0
+    I1s = np.ones_like(x)*(I1_seed)/om1_seed
+    I1_noise /= points # Scale total noise by number of modes tracked
+    I1n = np.ones((points,points))*I1_noise
+    I1nbc = np.zeros((points,1))
+    for i in range(points):
+      I1n[i,:] /= om1res[i]
+      I1nbc[i,:] = I1n[i,-1]
+    I0bc = I0[0]; I1sbc = I1s[-1]
+    if seed:
+      I = np.vstack((I0,I1n,I1s))
+      Ibc = np.vstack((I0bc,I1nbc,I1sbc))
+      n1 = points + 1
+    else:
+      I = np.vstack((I0,I1n))
+      Ibc = np.vstack((I0bc,I1nbc))
+      n1 = points
+
+
+    # Calculate gain matrix and functions
+    print('gain calc')
+    grf = []
+    gr = np.zeros((n1,points))
+    for i in range(n1):
+      print(i)
+      for j in range(points):
+        gr[i,j] = gain(j,omega1s[i])
+      grf.append(PchipInterpolator(x,gr[i,:]))
+
+    print('bvp')
+    for i in range(n1):
+      plt.plot(x,gr[i])
+    plt.show()
+    if pump_depletion:
+      # ODE evolution functions
+      def Fsrs(xi,Ii):
+        # Establish forest and set quantitis
+        I0i = Ii[0,:]
+        I1i = Ii[1:,:]
+        #I11i = Ii[1,:]
+        #I12i = Ii[2,:]
+        #I13i = Ii[3,:]
+        f1p = np.zeros((n1,len(xi)))
+        #print(I0i)
+        #print(I1i)
+        for i in range(n1):
+          f1p[i,:] = grf[i](xi)*I1i[i,:]
+        #print(f1p)
+        f1ps = np.sum(f1p,axis=0)
+        #print(f1ps)
+        f1 = np.array([-I0i*f1ps])
+        f2 = np.array([-I0i*f1p[i,:] for i in range(n1)])
+        #f1 = -I0i*(grf[0](xi)*I11i+grf[1](xi)*I12i+grf[2](xi)*I13i)
+        #f2 = -I0i*grf[0](xi)*I11i
+        #f3 = -I0i*grf[1](xi)*I12i
+        #f4 = -I0i*grf[2](xi)*I13i
+        #print(f1)
+        #print(f2)
+        return np.vstack((f1,f2))
+      def bc(ya,yb):
+        I0b = np.array([ya[0]-Ibc[0]])
+        I1b = np.array([yb[i] - Ibc[i] for i in range(1,n1+1)])
+        return np.r_[I0b,I1b][:,0]
+
+      res = solve_bvp(Fsrs,bc,x,I,verbose=2)#,tol=1e-10)
+      I0 = res.sol(x)[0]*self.omega0
+      I1 = np.zeros(points)
+      om1 = np.zeros(points)
+      gr = np.zeros(points)
+      for i in range(points):
+        I1[i] = np.sum(res.sol(x)[1:,i]*omega1s)
+      for i in range(points):
+        om1[i] = np.sum(res.sol(x)[1:,i]*omega1s**2)/I1[i]
+        gr[i] = gain(i,om1[i])
+
+    else:
+      I0cons = I0[0]
+      def Fsrs(xi,Iin):
+        I1i = Iin
+        gri = grf(xi)
+        f1 = -gri*I0cons*I1i
+        return f1
+      def bc(ya,yb):
+        return np.array([np.abs(yb[0]-I1bc)])
+
+      # Solve bvp and convert to intensity for return
+      y = I1[np.newaxis,:]
+      res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
+      I0 *= self.omega0
+      I1 = res.sol(x)[0]
+
+    if plots:
+      if self.nc0 is None:
+        self.get_nc0()
+      fig, axs = plt.subplots(2,2,sharex='col',figsize=(12,12/1.618034))
+      axs[0,0].plot(x*1e6,n/self.nc0)
+      axs[0,0].set_ylabel('n_e/n_c')
+      axs[0,1].plot(x*1e6,gr)
+      axs[0,1].set_ylabel('Wave Gain [m/Ws^2]')
+      axs[1,0].semilogy(x*1e6,I0)
+      axs[1,0].set_ylabel('I0 [W/m^2]')
+      axs[1,0].set_xlabel('x [um]')
+      axs[1,1].semilogy(x*1e6,I1)
+      axs[1,1].set_ylabel('I1 [W/m^2]')
+      axs[1,1].set_xlabel('x [um]')
+      fig.suptitle(f'Mode: {self.mode}; SDL: {self.sdl}; Relativistic: {self.relativistic}; '\
+          +f'\nne ref: {self.ne:0.2e} m^-3; Te: {self.Te:0.2e} K; '\
+          +f'\nI00: {self.I0:0.2e} W/m^2; lambda0: {self.lambda0:0.2e} m')
+      plt.tight_layout()
+      plt.show()
+
+    return x,n,I0,I1,gr
+
+  # Extension of BVP solver to include wave mixing from noise sources
   def wave_mixing_solve(self,I1_noise:float,xrange:tuple, \
       nrange:tuple,ntype:str,points=101,plots=False,pump_depletion=True,\
       I1_seed:Optional[float]=0.0,om1_seed:Optional[float]=None):
@@ -507,25 +692,10 @@ class srs_forest(laser_forest):
       def Fsrs(xi,Ii):
         I0i, I1i = Ii
         # Establish forest and set quantitis
-        #nonlocal om1mf
         om1m = om1f(xi)
         om1res = om1resf(xi)
         gr0 = grresf(xi)
         gri = grf(xi)
-        #noisecont = grresf(xi[1:])*I1_noise*I0i[1:]/om0*np.diff(xi)
-        #dI1 = np.zeros_like(I1i)
-        #dI1[:-1] = I1i[:-1] - I1i[1:]
-        #dI1[-1] = I1_seed
-        #dI1[:-1] = np.maximum(0.0,dI1[:-1]-noisecont)
-        #for i in range(len(xi)):
-        #  if I1i[i] > 1e-10:
-        #    om1m[i] = (np.sum(noisecont[i:]*om1res[1+i:]) \
-        #        +np.sum(dI1[i:]*om1m[i:]))/I1i[i]
-        #  else:
-        #    om1m[i] = om1res[i]
-        #om1m = (np.sum(noisecont*om1res[1:])+np.sum(dI1*om1m))/I1i
-        #om1mf = PchipInterpolator(xi,om1m)
-        #gri = np.array([gain(xi[i],om1m[i]) for i in range(len(xi))])
         f1 = -I0i*(gri/om1m*I1i+gr0/om1res*I1_noise)
         f2 = -I0i/om0*(gri*I1i+grresf(xi)*I1_noise)
         return np.vstack((f1,f2))
@@ -553,22 +723,11 @@ class srs_forest(laser_forest):
                 +np.sum(dI1[i:]*om1[i:]))/I1[i]
           else:
             om1[i] = om1res[i]
-        #plt.plot(x,om1res,label='resonant')
-        #plt.plot(x,om1,label='mixed')
-        #plt.legend()
-        #plt.show()
-        #om1m = (np.sum(noisecont*om1res[1:])+np.sum(dI1*om1m))/I1i
         om1mf = PchipInterpolator(x,om1)
         gr = np.array([gain(x[i],om1[i]) for i in range(len(x))])
         grf = PchipInterpolator(x,gr)
         conv = np.abs(I0[-1]-I0old)+np.abs(I1[0]-I1old)
         print(f'Convergence: {conv:0.2e}')
-      '''
-      y = np.vstack((I0,I1))
-      res = solve_bvp(Fsrs,bc,x,y)#,tol=1e-10,max_nodes=1e5)
-      I0 = res.sol(x)[0]
-      I1 = res.sol(x)[1]
-      '''
     else:
       I0cons = I0[0]
       def Fsrs(xi,Iin):
