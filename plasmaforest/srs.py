@@ -7,6 +7,7 @@ from scipy.optimize import bisect
 from scipy.interpolate import PchipInterpolator
 from scipy.integrate import solve_bvp
 import matplotlib.pyplot as plt
+import copy
 
 # SRS forest, three modes: laser, raman, epw
 # Currently direct backscatter only
@@ -113,7 +114,7 @@ class srs_forest(laser_forest):
     self.rosenbluth = None
 
   # Get matching wavenumbers and frequencies by either fluid or kinetic dispersion
-  def resonance_solve(self,undamped:Optional[bool]=False):
+  def resonance_solve(self,undamped:Optional[bool]=True):
     # Check omega0 and k0 already set
     if self.omega0 is None:
       self.get_omega0()
@@ -428,14 +429,13 @@ class srs_forest(laser_forest):
     return x,n,I0,I1,gr
 
   # Extension of BVP solver to include wave mixing from noise sources
-  '''
   def wave_mixing_solve(self,I1_noise:float,xrange:tuple, \
-      nrange:tuple,ntype:str,points=101,plots=False,\
-      om1_seed:Optional[float],I1_seed:Optional[float]=0.0):
+      nrange:tuple,ntype:str,points=101,plots=False,pump_depletion=True,\
+      I1_seed:Optional[float]=0.0,om1_seed:Optional[float]=None):
 
     # Check SDL flag true
     if not self.sdl:
-      raise Exception('bvp_solve only works in strong damping limit; self.sdl must be True.')
+      raise Exception('Non-SDL wave-mixing solve not implemented.')
 
     # Establish density profile
     x = np.linspace(xrange[0],xrange[1],points)
@@ -450,73 +450,140 @@ class srs_forest(laser_forest):
     else:
       raise Exception("ntype must be one of \'linear\' or \'exp\'")
 
-    # Copies of central forest for modified intitial properties
-    mixed = copy.deepcopy(self)
-    noise = copy.deepcopy(self)
-    
-    # N - 1 wave-mixing solves for noise from boundary plus mixed seed signal
-    for i in range(1,points):
-  
-      # Establish noise forest
-      noise.set_electrons(electrons=True,Te=self.Te,ne=n[i])
-      noise.resonance_solve()
+    # Resonance solve for each density point
+    birches = []
+    for i in range(points):
+      birches.append(srs_forest(self.mode,self.sdl,self.relativistic,\
+                                self.lambda0,self.I0,self.ndim,\
+                                electrons=self.electrons,nion=self.nion,\
+                                Te=self.Te,ne=n[i],Ti=self.Ti,ni=self.ni,\
+                                Z=self.Z,mi=self.mi))
+      birches[i].resonance_solve()
+      birches[i].get_gain_coeff()
 
-      # Establish seed forest
-      mixed.set_frequencies(om1_seed,self.omega0-om1seed)
-      k1 = emw_dispersion(om1_seed,target='k')
-      mixed.set_wavenumbers(k1,self.k0 + k1)
+    # Get interpolated functions
+    om0 = birches[0].omega0
+    om1res = np.array([i.omega1 for i in birches])
+    om1resf = PchipInterpolator(x,om1res)
+    nef = PchipInterpolator(x,n)
+    grres = np.array([i.gain_coeff for i in birches])
+    grresf = PchipInterpolator(x,grres)
 
-      # Setup list of forests with different densities relevant to both mixed and noise
-      noises = []
-      mixers = []
-      for j in range(i+1):
-        noises[j].append(copy.deepcopy(noise))
-        noises[j].set_electrons(electrons=True,Te=self.Te,ne=n[j])
-        noises[j].get_k0()
-        k1 = noises[i].emw_dispersion(noise.omega1,target='k')
-        noises[j].set_wavenumbers(k1,noises[j].k0+k1)
-        noises[j].get_gain_coeff()
+    # Non-resonant gain function
+    def gain(xi,om1i):
+      birch = copy.deepcopy(self)
+      ne = float(nef(xi))
+      birch.set_electrons(electrons=True,Te=birch.Te,ne=ne)
+      birch.set_frequencies(om1i,om0-om1i)
+      birch.get_k0()
+      k1 = birch.emw_dispersion(om1i,target='k')
+      birch.set_wavenumbers(k1,birch.k0+k1)
+      birch.get_gain_coeff()
+      return birch.gain_coeff
 
-        mixers[j].append(copy.deepcopy(mixed))
-        mixers[j].set_electrons(electrons=True,Te=self.Te,ne=n[j])
-        mixers[j].get_k0()
-        k1 = mixers[i].emw_dispersion(mixed.omega1,target='k')
-        mixers[j].set_wavenumbers(k1,mixers[j].k0+k1)
-        mixers[j].get_gain_coeff()
-
-      # Initialise wave action arrays
-      I0 = np.ones_like(x)*self.I0/self.omega0
-      I1 = np.ones_like(x)*I1_seed/mixed.omega1
-      I1n = np.ones_like(x)*I1_noise/noise.omega1
-      I0bc = I0[0]; I1bc = I1[-1]; I1nbc = I1n[-1]
-
-      # Setup interpolation array for wave action gain
-      gr = np.array([i.gain_coeff for i in mixers])
-      gr0 = np.array([i.gain_coeff for i in noises])
+    # Check om1_seed input
+    if om1_seed is None:
+      om1_seed = birches[-1].omega1
+      om1 = copy.deepcopy(om1res)
+      om1f = PchipInterpolator(x,om1)
+      I1_seed = 0.0
+      gr = np.zeros_like(x)
       grf = PchipInterpolator(x,gr)
-      gr0f = PchipInterpolator(x,gr0)
-      
+    elif om1_seed <= 0.0:
+      raise Exception('Seed Raman frequency must be positive')
+    else:
+      gr = np.array([gain(x[i],om1_seed) for i in range(len(x))])
+      grf = PchipInterpolator(x,gr)
+      om1 = np.ones_like(x)*om1_seed
+      om1f = PchipInterpolator(x,om1)
+
+    # Initialise intensity arrays
+    I0 = np.ones_like(x)*self.I0
+    I1 = np.ones_like(x)*(I1_seed)
+    I0bc = I0[0]; I1bc = I1[-1]
+
+    if pump_depletion:
       # ODE evolution functions
-      def Fsrs(xi,Iin):
-        I0i, I1i, I1ni = Iin
+      def Fsrs(xi,Ii):
+        I0i, I1i = Ii
+        # Establish forest and set quantitis
+        #nonlocal om1mf
+        om1m = om1f(xi)
+        om1res = om1resf(xi)
+        gr0 = grresf(xi)
         gri = grf(xi)
-        gr0i = grf0(xi)
-        f1 = -gri*I0i*I1i - gr0i*I0i*I1ni
-        f2 = -gri*I0i*I1i
-        f3 = -gr0i*I0i*I1ni
-        return np.vstack((f1,f2,f3))
+        #noisecont = grresf(xi[1:])*I1_noise*I0i[1:]/om0*np.diff(xi)
+        #dI1 = np.zeros_like(I1i)
+        #dI1[:-1] = I1i[:-1] - I1i[1:]
+        #dI1[-1] = I1_seed
+        #dI1[:-1] = np.maximum(0.0,dI1[:-1]-noisecont)
+        #for i in range(len(xi)):
+        #  if I1i[i] > 1e-10:
+        #    om1m[i] = (np.sum(noisecont[i:]*om1res[1+i:]) \
+        #        +np.sum(dI1[i:]*om1m[i:]))/I1i[i]
+        #  else:
+        #    om1m[i] = om1res[i]
+        #om1m = (np.sum(noisecont*om1res[1:])+np.sum(dI1*om1m))/I1i
+        #om1mf = PchipInterpolator(xi,om1m)
+        #gri = np.array([gain(xi[i],om1m[i]) for i in range(len(xi))])
+        f1 = -I0i*(gri/om1m*I1i+gr0/om1res*I1_noise)
+        f2 = -I0i/om0*(gri*I1i+grresf(xi)*I1_noise)
+        return np.vstack((f1,f2))
       def bc(ya,yb):
-        return np.array([np.abs(ya[0]-I0bc),np.abs(yb[1]-I1bc),np.abs(yb[2]-I1nbc)])
+        return np.array([ya[0]-I0bc,yb[1]-I1bc])
 
-      # Solve bvp and convert to intensity
-      y = np.vstack((I0,I1,I1n))
+      # Iteratively solve BVP and update frequencies
+      conv = I1_noise
+      while (conv > I1_noise/1000):
+        I0old = I0[-1]
+        I1old = I1[0]
+        y = np.vstack((I0,I1))
+        #res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
+        res = solve_bvp(Fsrs,bc,x,y)#,tol=1e-10,max_nodes=1e5)
+        I0 = res.sol(x)[0]
+        I1 = res.sol(x)[1]#+I1_noise
+        noisecont = grresf(x[1:])*I1_noise*I0[1:]/om0*np.diff(x)
+        dI1 = np.zeros_like(I1)
+        dI1[:-1] = I1[:-1] - I1[1:]
+        dI1[-1] = I1_seed
+        dI1[:-1] = np.maximum(0.0,dI1[:-1]-noisecont)
+        for i in range(len(x)):
+          if I1[i] > 100:
+            om1[i] = (np.sum(noisecont[i:]*om1res[1+i:]) \
+                +np.sum(dI1[i:]*om1[i:]))/I1[i]
+          else:
+            om1[i] = om1res[i]
+        #plt.plot(x,om1res,label='resonant')
+        #plt.plot(x,om1,label='mixed')
+        #plt.legend()
+        #plt.show()
+        #om1m = (np.sum(noisecont*om1res[1:])+np.sum(dI1*om1m))/I1i
+        om1mf = PchipInterpolator(x,om1)
+        gr = np.array([gain(x[i],om1[i]) for i in range(len(x))])
+        grf = PchipInterpolator(x,gr)
+        conv = np.abs(I0[-1]-I0old)+np.abs(I1[0]-I1old)
+        print(f'Convergence: {conv:0.2e}')
+      '''
+      y = np.vstack((I0,I1))
+      res = solve_bvp(Fsrs,bc,x,y)#,tol=1e-10,max_nodes=1e5)
+      I0 = res.sol(x)[0]
+      I1 = res.sol(x)[1]
+      '''
+    else:
+      I0cons = I0[0]
+      def Fsrs(xi,Iin):
+        I1i = Iin
+        gri = grf(xi)
+        f1 = -gri*I0cons*I1i
+        return f1
+      def bc(ya,yb):
+        return np.array([np.abs(yb[0]-I1bc)])
+
+      # Solve bvp and convert to intensity for return
+      y = I1[np.newaxis,:]
       res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
-      I0 = res.sol(x)[0]*self.omega0
-      I1 = res.sol(x)[1]*mixed.omega1
-      I1n = res.sol(x)[2]*noise.omega1
-
-      # Update seed quantities for next iteration
-      #om1_seed = 
+      I0 *= self.omega0
+      I1 = res.sol(x)[0]
 
     if plots:
       if self.nc0 is None:
@@ -539,4 +606,3 @@ class srs_forest(laser_forest):
       plt.show()
 
     return x,n,I0,I1,gr
-  '''
