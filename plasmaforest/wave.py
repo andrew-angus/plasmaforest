@@ -384,20 +384,17 @@ class wave_forest(forest):
       #return np.real(self.kinetic_permittivity(omega[0],k,full=False))
       return fac-np.real(dZfun(zeta))
 
-    # Get zero of real permittivity by minimisation
+    # Get zero of real permittivity by root-finding (or minimisation if failed)
     K = k*self.dbye
     omega0 = self.bohm_gross(k,target='omega')
-    res = minimize(repsana,np.array([omega0]),tol=np.finfo(np.float64).eps)
-    omega0 = res.x[0]
-    res = minimize(realeps,np.array([omega0]),tol=np.finfo(np.float64).eps)
-    omega0 = res.x[0]
     zeta0 = omega0/(k*self.vthe)
     fac = 2*sqr(K)
     try:
       res = newton(reps,np.array([zeta0]),tol=100*np.finfo(np.float64).eps)
       omega = res[0]*k*self.vthe
     except:
-      omega = omega0
+      res = minimize(repsana,np.array([omega0]),tol=np.finfo(np.float64).eps)
+      omega = res.x[0]
 
     return omega
 
