@@ -428,6 +428,165 @@ class srs_forest(laser_forest):
 
     return x,n,I0,I1,gr
 
+  # 1D BVP solve with parent forest setting resonance conditions
+  def ray_trace_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101,\
+      plots=False,pump_depletion=True,absorption=False):
+
+    # Check SDL flag true
+    if not self.sdl:
+      raise Exception('bvp_solve only works in strong damping limit; self.sdl must be True.')
+
+    # Establish density profile
+    x = np.linspace(xrange[0],xrange[1],points+1)
+    dx = x[1]-x[0]
+    xc = np.linspace(dx/2,xrange[1]-dx/2,points)
+    if ntype == 'linear':
+      m = (nrange[1]-nrange[0])/(xrange[1]-xrange[0])
+      n = np.minimum(nrange[0] + np.maximum(xc - xrange[0], 0) * m, nrange[1])
+    elif ntype == 'exp':
+      dr = abs(xrange[0]-xrange[1])
+      Ln = dr/np.log(nrange[1]/nrange[0])
+      r = abs(xc-xrange[1])
+      n = nrange[1]*np.exp(-r/Ln)
+    else:
+      raise Exception("ntype must be one of \'linear\' or \'exp\'")
+    
+    # Resonance solve on parent forest if not already
+    if self.omega2 is None or self.omega1 is None \
+        or self.k2 is None or self.k1 is None:
+      self.resonance_solve(undamped=True)
+
+    # Setup list of srs forests for each density relevant to parent forest
+    birches = []
+    for i in range(points):
+      birches.append(srs_forest(self.mode,self.sdl,self.relativistic,\
+                                self.lambda0,self.I0,self.ndim,\
+                                electrons=self.electrons,nion=self.nion,\
+                                Te=self.Te,ne=n[i],Ti=self.Ti,ni=self.ni,\
+                                Z=self.Z,mi=self.mi))
+      birches[i].set_frequencies(self.omega1,self.omega2)
+      birches[i].get_k0()
+      k1 = -birches[i].emw_dispersion(self.omega1,target='k')
+      birches[i].set_wavenumbers(k1,birches[i].k0-k1)
+      birches[i].get_gain_coeff()
+      birches[i].get_vg0()
+      birches[i].get_vg1()
+      try:
+        birches[i].get_damping0()
+      except:
+        birches[i].damping0 = 0.0
+      try:
+        birches[i].get_damping1()
+      except:
+        birches[i].damping1 = 0.0
+
+
+    # Initialise intensity arrays
+    I0 = np.zeros_like(x)
+    I1 = np.zeros_like(x)
+    P0 = self.I0/self.omega0
+    P1 = I1_seed/self.omega1
+
+    # Setup interpolation array for wave action gain
+    gr0 = np.array([i.gain_coeff for i in birches])
+    dt0 = np.array([dx/i.vg0 for i in birches])
+    dt1 = np.array([dx/i.vg1 for i in birches])
+    nu0 = np.array([i.damping0 for i in birches])
+    nu1 = np.array([i.damping0 for i in birches])
+    
+    # Raman ray class
+    class rray:
+      def __init__(self,cid,act):
+        self.cid = cid
+        self.act = act
+
+    # Basic gain function
+    def base_gain(i):
+      return gr0[i]
+
+    # Ray trace with SRS modelling
+    conv = 1; niter = 0
+    while conv > 1e-2:
+      # Initialisation
+      I0old = copy.deepcopy(I0)
+      I1old = copy.deepcopy(I1)
+      I0[:] = 0.0
+      I1[:] = 0.0
+
+      # Add Raman Seed ray to list
+      rrays = []
+      rrays.append(rray(points-1,P1))
+      
+      # Launch laser ray
+      P = P0
+      for i in range(points):
+        # Cell update
+        I0[i] += P
+
+        # IB
+        if absorption:
+          P *= np.exp(-2*dt0[i]*nu0[i])
+
+        # SRS
+        exch = base_gain(i)*P*I1old[i]*dx
+        rrays.append(rray(i-1,exch))
+        if pump_depletion:
+          P -= exch
+
+      # Update exit value
+      I0[-1] += P
+
+      # Push all raman rays out of domain
+      for i in rrays:
+        while i.cid >= 0:
+          # Cell upate
+          I1[i.cid] += i.act
+
+          # IB
+          if absorption:
+            i.act *= np.exp(-2*dt1[i]*nu1[i])
+
+          # Propagate
+          i.cid -= 1
+          
+        # Update exit value
+        I1[-1] += i.act
+
+      # Calculate convergence condition
+      conv = np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old-I1))
+      niter += 1
+      print(f'Iteration: {niter}; Convergence: {conv}')
+
+    I0 *= self.omega0
+    I1 *= self.omega1
+    gr = gr0
+
+    tmp = I1[-1]
+    I1[1:] = I1[:-1]
+    I1[0] = tmp
+
+    if plots:
+      if self.nc0 is None:
+        self.get_nc0()
+      fig, axs = plt.subplots(2,2,sharex='col',figsize=(12,12/1.618034))
+      axs[0,0].plot(xc*1e6,n/self.nc0)
+      axs[0,0].set_ylabel('n_e/n_c')
+      axs[0,1].plot(xc*1e6,gr)
+      axs[0,1].set_ylabel('Wave Gain [m/Ws^2]')
+      axs[1,0].semilogy(x*1e6,I0)
+      axs[1,0].set_ylabel('I0 [W/m^2]')
+      axs[1,0].set_xlabel('x [um]')
+      axs[1,1].semilogy(x*1e6,I1)
+      axs[1,1].set_ylabel('I1 [W/m^2]')
+      axs[1,1].set_xlabel('x [um]')
+      fig.suptitle(f'Mode: {self.mode}; SDL: {self.sdl}; Relativistic: {self.relativistic}; '\
+          +f'\nne ref: {self.ne:0.2e} m^-3; Te: {self.Te:0.2e} K; '\
+          +f'\nI00: {self.I0:0.2e} W/m^2; lambda0: {self.lambda0:0.2e} m')
+      plt.tight_layout()
+      plt.show()
+
+    return x,xc,n,I0,I1,gr
+
   # Extension of BVP solver to include wave mixing from noise sources
   def wave_mixing_solve2(self,I1_noise:float,xrange:tuple, \
       nrange:tuple,ntype:str,points=101,plots=False,pump_depletion=True,\
