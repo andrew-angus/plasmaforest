@@ -344,6 +344,18 @@ class srs_forest(laser_forest):
     else:
       return birch.gain_coeff
 
+  # Resonance solve across a density range
+  def __resonance_range__(self,n:np.ndarray):
+    birches = []
+    for i in range(len(n)):
+      birches.append(copy.deepcopy(self))
+      birches[i].set_electrons(electrons=True,Te=self.Te,ne=n[i])
+      birches[i].resonance_solve()
+      birches[i].get_gain_coeff()
+    om1res = np.array([i.omega1 for i in birches])
+    grres = np.array([i.gain_coeff for i in birches])
+    return grres, om1res
+
   # 1D BVP solve with parent forest setting resonance conditions
   def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101,\
       plots=False,pump_depletion=True):
@@ -573,23 +585,8 @@ class srs_forest(laser_forest):
     x,n = den_profile(xrange,nrange,ntype,points)
 
     # Resonance solve for each density point
-    print('resonance solve')
-    birches = []
-    for i in range(points):
-      birches.append(srs_forest(self.mode,self.sdl,self.relativistic,\
-                                self.lambda0,self.I0,self.ndim,\
-                                electrons=self.electrons,nion=self.nion,\
-                                Te=self.Te,ne=n[i],Ti=self.Ti,ni=self.ni,\
-                                Z=self.Z,mi=self.mi))
-      birches[i].resonance_solve()
-      birches[i].get_gain_coeff()
-
-    # Get interpolated functions
-    om0 = birches[0].omega0
-    om1res = np.array([i.omega1 for i in birches])
+    grres, om1res = self.__resonance_range__(n)
     om1resf = PchipInterpolator(x,om1res)
-    nef = PchipInterpolator(x,n)
-    grres = np.array([i.gain_coeff for i in birches])
     grresf = PchipInterpolator(x,grres)
 
     # Check om1_seed input
@@ -609,6 +606,7 @@ class srs_forest(laser_forest):
       omega1s = np.r_[om1res,np.array([om1_seed])]
 
     # Initialise intensity arrays
+    om0 = self.omega0
     I0 = np.ones_like(x)*self.I0/om0
     I1s = np.ones_like(x)*(I1_seed)/om1_seed
     I1_noise /= points # Scale total noise by number of modes tracked
@@ -629,7 +627,6 @@ class srs_forest(laser_forest):
 
 
     # Calculate gain matrix and functions
-    print('gain calc')
     grf = []
     gr = np.zeros((n1,points))
     for i in range(n1):
@@ -638,7 +635,6 @@ class srs_forest(laser_forest):
         gr[i,j] = self.__emw_change__(n[j],omega1s[i])
       grf.append(PchipInterpolator(x,gr[i,:]))
 
-    print('bvp')
     for i in range(n1):
       plt.plot(x,gr[i])
     plt.show()
@@ -648,25 +644,12 @@ class srs_forest(laser_forest):
         # Establish forest and set quantitis
         I0i = Ii[0,:]
         I1i = Ii[1:,:]
-        #I11i = Ii[1,:]
-        #I12i = Ii[2,:]
-        #I13i = Ii[3,:]
         f1p = np.zeros((n1,len(xi)))
-        #print(I0i)
-        #print(I1i)
         for i in range(n1):
           f1p[i,:] = grf[i](xi)*I1i[i,:]
-        #print(f1p)
         f1ps = np.sum(f1p,axis=0)
-        #print(f1ps)
         f1 = np.array([-I0i*f1ps])
         f2 = np.array([-I0i*f1p[i,:] for i in range(n1)])
-        #f1 = -I0i*(grf[0](xi)*I11i+grf[1](xi)*I12i+grf[2](xi)*I13i)
-        #f2 = -I0i*grf[0](xi)*I11i
-        #f3 = -I0i*grf[1](xi)*I12i
-        #f4 = -I0i*grf[2](xi)*I13i
-        #print(f1)
-        #print(f2)
         return np.vstack((f1,f2))
       def bc(ya,yb):
         I0b = np.array([ya[0]-Ibc[0]])
@@ -735,27 +718,13 @@ class srs_forest(laser_forest):
     x,n = den_profile(xrange,nrange,ntype,points)
 
     # Resonance solve for each density point
-    birches = []
-    for i in range(points):
-      birches.append(srs_forest(self.mode,self.sdl,self.relativistic,\
-                                self.lambda0,self.I0,self.ndim,\
-                                electrons=self.electrons,nion=self.nion,\
-                                Te=self.Te,ne=n[i],Ti=self.Ti,ni=self.ni,\
-                                Z=self.Z,mi=self.mi))
-      birches[i].resonance_solve()
-      birches[i].get_gain_coeff()
-
-    # Get interpolated functions
-    om0 = birches[0].omega0
-    om1res = np.array([i.omega1 for i in birches])
-    om1resf = PchipInterpolator(x,om1res)
-    nef = PchipInterpolator(x,n)
-    grres = np.array([i.gain_coeff for i in birches])
+    grres, om1res = self.__resonance_range__(n)
     grresf = PchipInterpolator(x,grres)
+    om1resf = PchipInterpolator(x,om1res)
 
     # Check om1_seed input
     if om1_seed is None:
-      om1_seed = birches[-1].omega1
+      om1_seed = om1res[-1]
       om1 = copy.deepcopy(om1res)
       om1f = PchipInterpolator(x,om1)
       I1_seed = 0.0
@@ -770,6 +739,7 @@ class srs_forest(laser_forest):
       om1f = PchipInterpolator(x,om1)
 
     # Initialise intensity arrays
+    om0 = self.omega0
     I0 = np.ones_like(x)*self.I0
     I1 = np.ones_like(x)*(I1_seed)
     I0bc = I0[0]; I1bc = I1[-1]
