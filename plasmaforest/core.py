@@ -327,3 +327,24 @@ def sqr(arg:flint) -> flint:
 def dtype_check(arr:np.ndarray,dtype:type):
   assert arr.dtype == dtype, f'numpy array {arr} must be {dtype} dtype'+\
       f' but is {arr.dtype}'
+
+# Establish density profile
+@typechecked
+def den_profile(xrange:tuple,nrange:tuple,ntype:str,points:int,centred:Optional[bool]=False):
+  if centred:
+    dx = (xrange[1]-xrange[0])/(points-1)
+    x = np.linspace(xrange[0]+dx/2,xrange[1]-dx/2,points-1)
+  else:
+    x = np.linspace(xrange[0],xrange[1],points)
+  if ntype == 'linear':
+    m = (nrange[1]-nrange[0])/(xrange[1]-xrange[0])
+    n = np.minimum(nrange[0] + np.maximum(x - xrange[0], 0) * m, nrange[1])
+  elif ntype == 'exp':
+    dr = abs(xrange[0]-xrange[1])
+    Ln = dr/np.log(nrange[1]/nrange[0])
+    r = abs(x-xrange[1])
+    n = nrange[1]*np.exp(-r/Ln)
+  else:
+    raise Exception("ntype must be one of \'linear\' or \'exp\'")
+
+  return x,n

@@ -333,24 +333,14 @@ class srs_forest(laser_forest):
     if not self.sdl:
       raise Exception('bvp_solve only works in strong damping limit; self.sdl must be True.')
 
-    # Establish density profile
-    x = np.linspace(xrange[0],xrange[1],points)
-    if ntype == 'linear':
-      m = (nrange[1]-nrange[0])/(xrange[1]-xrange[0])
-      n = np.minimum(nrange[0] + np.maximum(x - xrange[0], 0) * m, nrange[1])
-    elif ntype == 'exp':
-      dr = abs(xrange[0]-xrange[1])
-      Ln = dr/np.log(nrange[1]/nrange[0])
-      r = abs(x-xrange[1])
-      n = nrange[1]*np.exp(-r/Ln)
-    else:
-      raise Exception("ntype must be one of \'linear\' or \'exp\'")
-    
     # Resonance solve on parent forest if not already
     if self.omega2 is None or self.omega1 is None \
         or self.k2 is None or self.k1 is None:
       self.resonance_solve(undamped=True)
 
+    # Establish density profile
+    x,n = den_profile(xrange,nrange,ntype,points)
+    
     # Setup list of srs forests for each density relevant to parent forest
     birches = []
     for i in range(points):
@@ -429,7 +419,7 @@ class srs_forest(laser_forest):
     return x,n,I0,I1,gr
 
   # 1D BVP solve with parent forest setting resonance conditions
-  def ray_trace_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101,\
+  def ray_trace_solve(self,xrange:tuple,nrange:tuple,ntype:str,I1_noise=0.0,I1_seed=0.0,points=101,\
       plots=False,pump_depletion=True,absorption=False):
 
     # Check SDL flag true
@@ -437,19 +427,10 @@ class srs_forest(laser_forest):
       raise Exception('bvp_solve only works in strong damping limit; self.sdl must be True.')
 
     # Establish density profile
-    x = np.linspace(xrange[0],xrange[1],points+1)
+    x = np.linspace(xrange[0],xrange[1],points)
     dx = x[1]-x[0]
-    xc = np.linspace(dx/2,xrange[1]-dx/2,points)
-    if ntype == 'linear':
-      m = (nrange[1]-nrange[0])/(xrange[1]-xrange[0])
-      n = np.minimum(nrange[0] + np.maximum(xc - xrange[0], 0) * m, nrange[1])
-    elif ntype == 'exp':
-      dr = abs(xrange[0]-xrange[1])
-      Ln = dr/np.log(nrange[1]/nrange[0])
-      r = abs(xc-xrange[1])
-      n = nrange[1]*np.exp(-r/Ln)
-    else:
-      raise Exception("ntype must be one of \'linear\' or \'exp\'")
+    cells = points - 1
+    xc,n = den_profile(xrange,nrange,ntype,points,centred=True)
     
     # Resonance solve on parent forest if not already
     if self.omega2 is None or self.omega1 is None \
@@ -458,7 +439,7 @@ class srs_forest(laser_forest):
 
     # Setup list of srs forests for each density relevant to parent forest
     birches = []
-    for i in range(points):
+    for i in range(cells):
       birches.append(srs_forest(self.mode,self.sdl,self.relativistic,\
                                 self.lambda0,self.I0,self.ndim,\
                                 electrons=self.electrons,nion=self.nion,\
@@ -515,11 +496,11 @@ class srs_forest(laser_forest):
 
       # Add Raman Seed ray to list
       rrays = []
-      rrays.append(rray(points-1,P1))
+      rrays.append(rray(cells,P1))
       
       # Launch laser ray
       P = P0
-      for i in range(points):
+      for i in range(cells):
         # Cell update
         I0[i] += P
 
@@ -528,10 +509,17 @@ class srs_forest(laser_forest):
           P *= np.exp(-2*dt0[i]*nu0[i])
 
         # SRS
+        # Dominant signal
         exch = base_gain(i)*P*I1old[i]*dx
         rrays.append(rray(i-1,exch))
         if pump_depletion:
           P -= exch
+
+        # Noise signal
+        #exch = base_gain(i)*P*I1old[i]*dx
+        #rrays.append(rray(i-1,exch))
+        #if pump_depletion:
+        #  P -= exch
 
       # Update exit value
       I0[-1] += P
@@ -597,17 +585,7 @@ class srs_forest(laser_forest):
       raise Exception('Non-SDL wave-mixing solve not implemented.')
 
     # Establish density profile
-    x = np.linspace(xrange[0],xrange[1],points)
-    if ntype == 'linear':
-      m = (nrange[1]-nrange[0])/(xrange[1]-xrange[0])
-      n = np.minimum(nrange[0] + np.maximum(x - xrange[0], 0) * m, nrange[1])
-    elif ntype == 'exp':
-      dr = abs(xrange[0]-xrange[1])
-      Ln = dr/np.log(nrange[1]/nrange[0])
-      r = abs(x-xrange[1])
-      n = nrange[1]*np.exp(-r/Ln)
-    else:
-      raise Exception("ntype must be one of \'linear\' or \'exp\'")
+    x,n = den_profile(xrange,nrange,ntype,points)
 
     # Resonance solve for each density point
     print('resonance solve')
@@ -782,17 +760,7 @@ class srs_forest(laser_forest):
       raise Exception('Non-SDL wave-mixing solve not implemented.')
 
     # Establish density profile
-    x = np.linspace(xrange[0],xrange[1],points)
-    if ntype == 'linear':
-      m = (nrange[1]-nrange[0])/(xrange[1]-xrange[0])
-      n = np.minimum(nrange[0] + np.maximum(x - xrange[0], 0) * m, nrange[1])
-    elif ntype == 'exp':
-      dr = abs(xrange[0]-xrange[1])
-      Ln = dr/np.log(nrange[1]/nrange[0])
-      r = abs(x-xrange[1])
-      n = nrange[1]*np.exp(-r/Ln)
-    else:
-      raise Exception("ntype must be one of \'linear\' or \'exp\'")
+    x,n = den_profile(xrange,nrange,ntype,points)
 
     # Resonance solve for each density point
     birches = []
