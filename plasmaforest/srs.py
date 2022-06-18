@@ -325,37 +325,6 @@ class srs_forest(laser_forest):
     # Rosenbluth gain coefficient
     self.rosenbluth = 2*np.pi*sqr(self.gamma0)/np.abs(self.vg1*self.vg2*dkmis)
 
-  # SRS gain function for any density and Raman frequency (and optionally absorption)
-  def __emw_change__(self,ne:float,om1:float,absorption:Optional[bool]=False):
-    birch = copy.deepcopy(self)
-    birch.set_electrons(electrons=True,Te=birch.Te,ne=ne)
-    birch.set_frequencies(om1,birch.omega0-om1)
-    birch.get_k0()
-    k1 = birch.emw_dispersion(om1,target='k')
-    birch.set_wavenumbers(k1,birch.k0+k1)
-    birch.get_gain_coeff()
-    if absorption:
-      birch.ion_check()
-      birch.get_vg0()
-      birch.get_vg1()
-      birch.get_damping0()
-      birch.get_damping1()
-      return birch.gain_coeff, birch.damping0/birch.vg0, birch.damping1/birch.vg1
-    else:
-      return birch.gain_coeff
-
-  # Resonance solve across a density range
-  def __resonance_range__(self,n:np.ndarray):
-    birches = []
-    for i in range(len(n)):
-      birches.append(copy.deepcopy(self))
-      birches[i].set_electrons(electrons=True,Te=self.Te,ne=n[i])
-      birches[i].resonance_solve()
-      birches[i].get_gain_coeff()
-    om1res = np.array([i.omega1 for i in birches])
-    grres = np.array([i.gain_coeff for i in birches])
-    return grres, om1res
-
   # 1D BVP solve with parent forest setting resonance conditions
   def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101,\
       plots=False,pump_depletion=True):
@@ -414,24 +383,7 @@ class srs_forest(laser_forest):
       I1 = res.sol(x)[0]*self.omega1
 
     if plots:
-      if self.nc0 is None:
-        self.get_nc0()
-      fig, axs = plt.subplots(2,2,sharex='col',figsize=(12,12/1.618034))
-      axs[0,0].plot(x*1e6,n/self.nc0)
-      axs[0,0].set_ylabel('n_e/n_c')
-      axs[0,1].plot(x*1e6,gr)
-      axs[0,1].set_ylabel('Wave Gain [m/Ws^2]')
-      axs[1,0].semilogy(x*1e6,I0)
-      axs[1,0].set_ylabel('I0 [W/m^2]')
-      axs[1,0].set_xlabel('x [um]')
-      axs[1,1].semilogy(x*1e6,I1)
-      axs[1,1].set_ylabel('I1 [W/m^2]')
-      axs[1,1].set_xlabel('x [um]')
-      fig.suptitle(f'Mode: {self.mode}; SDL: {self.sdl}; Relativistic: {self.relativistic}; '\
-          +f'\nne ref: {self.ne:0.2e} m^-3; Te: {self.Te:0.2e} K; '\
-          +f'\nI00: {self.I0:0.2e} W/m^2; lambda0: {self.lambda0:0.2e} m')
-      plt.tight_layout()
-      plt.show()
+      self.__srs_plots__(x,n,gr,I0,I1)
 
     return x,n,I0,I1,gr
 
@@ -551,24 +503,7 @@ class srs_forest(laser_forest):
 
     # Optionally plot
     if plots:
-      if self.nc0 is None:
-        self.get_nc0()
-      fig, axs = plt.subplots(2,2,sharex='col',figsize=(12,12/1.618034))
-      axs[0,0].plot(xc*1e6,n/self.nc0)
-      axs[0,0].set_ylabel('n_e/n_c')
-      axs[0,1].plot(xc*1e6,gr)
-      axs[0,1].set_ylabel('Wave Gain [m/Ws^2]')
-      axs[1,0].semilogy(x*1e6,I0)
-      axs[1,0].set_ylabel('I0 [W/m^2]')
-      axs[1,0].set_xlabel('x [um]')
-      axs[1,1].semilogy(x*1e6,I1)
-      axs[1,1].set_ylabel('I1 [W/m^2]')
-      axs[1,1].set_xlabel('x [um]')
-      fig.suptitle(f'Mode: {self.mode}; SDL: {self.sdl}; Relativistic: {self.relativistic}; '\
-          +f'\nne ref: {self.ne:0.2e} m^-3; Te: {self.Te:0.2e} K; '\
-          +f'\nI00: {self.I0:0.2e} W/m^2; lambda0: {self.lambda0:0.2e} m')
-      plt.tight_layout()
-      plt.show()
+      self.__srs_plots__(x,n,gr,I0,I1,centred=True,xc=xc)
 
     return x,xc,n,I0,I1,gr
 
@@ -624,7 +559,6 @@ class srs_forest(laser_forest):
       I = np.vstack((I0,I1n))
       Ibc = np.vstack((I0bc,I1nbc))
       n1 = points
-
 
     # Calculate gain matrix and functions
     grf = []
@@ -684,24 +618,7 @@ class srs_forest(laser_forest):
       I1 = res.sol(x)[0]
 
     if plots:
-      if self.nc0 is None:
-        self.get_nc0()
-      fig, axs = plt.subplots(2,2,sharex='col',figsize=(12,12/1.618034))
-      axs[0,0].plot(x*1e6,n/self.nc0)
-      axs[0,0].set_ylabel('n_e/n_c')
-      axs[0,1].plot(x*1e6,gr)
-      axs[0,1].set_ylabel('Wave Gain [m/Ws^2]')
-      axs[1,0].semilogy(x*1e6,I0)
-      axs[1,0].set_ylabel('I0 [W/m^2]')
-      axs[1,0].set_xlabel('x [um]')
-      axs[1,1].semilogy(x*1e6,I1)
-      axs[1,1].set_ylabel('I1 [W/m^2]')
-      axs[1,1].set_xlabel('x [um]')
-      fig.suptitle(f'Mode: {self.mode}; SDL: {self.sdl}; Relativistic: {self.relativistic}; '\
-          +f'\nne ref: {self.ne:0.2e} m^-3; Te: {self.Te:0.2e} K; '\
-          +f'\nI00: {self.I0:0.2e} W/m^2; lambda0: {self.lambda0:0.2e} m')
-      plt.tight_layout()
-      plt.show()
+      self.__srs_plots__(x,n,gr,I0,I1)
 
     return x,n,I0,I1,gr
 
@@ -802,23 +719,64 @@ class srs_forest(laser_forest):
       I1 = res.sol(x)[0]
 
     if plots:
-      if self.nc0 is None:
-        self.get_nc0()
-      fig, axs = plt.subplots(2,2,sharex='col',figsize=(12,12/1.618034))
-      axs[0,0].plot(x*1e6,n/self.nc0)
-      axs[0,0].set_ylabel('n_e/n_c')
-      axs[0,1].plot(x*1e6,gr)
-      axs[0,1].set_ylabel('Wave Gain [m/Ws^2]')
-      axs[1,0].semilogy(x*1e6,I0)
-      axs[1,0].set_ylabel('I0 [W/m^2]')
-      axs[1,0].set_xlabel('x [um]')
-      axs[1,1].semilogy(x*1e6,I1)
-      axs[1,1].set_ylabel('I1 [W/m^2]')
-      axs[1,1].set_xlabel('x [um]')
-      fig.suptitle(f'Mode: {self.mode}; SDL: {self.sdl}; Relativistic: {self.relativistic}; '\
-          +f'\nne ref: {self.ne:0.2e} m^-3; Te: {self.Te:0.2e} K; '\
-          +f'\nI00: {self.I0:0.2e} W/m^2; lambda0: {self.lambda0:0.2e} m')
-      plt.tight_layout()
-      plt.show()
+      self.__srs_plots__(x,n,gr,I0,I1)
 
     return x,n,I0,I1,gr
+
+  # SRS gain function for any density and Raman frequency (and optionally absorption)
+  def __emw_change__(self,ne:float,om1:float,absorption:Optional[bool]=False):
+    birch = copy.deepcopy(self)
+    birch.set_electrons(electrons=True,Te=birch.Te,ne=ne)
+    birch.set_frequencies(om1,birch.omega0-om1)
+    birch.get_k0()
+    k1 = birch.emw_dispersion(om1,target='k')
+    birch.set_wavenumbers(k1,birch.k0+k1)
+    birch.get_gain_coeff()
+    if absorption:
+      birch.ion_check()
+      birch.get_vg0()
+      birch.get_vg1()
+      birch.get_damping0()
+      birch.get_damping1()
+      return birch.gain_coeff, birch.damping0/birch.vg0, birch.damping1/birch.vg1
+    else:
+      return birch.gain_coeff
+
+  # Resonance solve across a density range
+  def __resonance_range__(self,n:np.ndarray):
+    birches = []
+    for i in range(len(n)):
+      birches.append(copy.deepcopy(self))
+      birches[i].set_electrons(electrons=True,Te=self.Te,ne=n[i])
+      birches[i].resonance_solve()
+      birches[i].get_gain_coeff()
+    om1res = np.array([i.omega1 for i in birches])
+    grres = np.array([i.gain_coeff for i in birches])
+    return grres, om1res
+
+  def __srs_plots__(self,x:np.ndarray,n:np.ndarray,gr:np.ndarray, \
+                    I0:np.ndarray,I1:np.ndarray, \
+                    xc:Optional[np.ndarray]=None,centred:Optional[bool]=False):
+    if self.nc0 is None:
+      self.get_nc0()
+    fig, axs = plt.subplots(2,2,sharex='col',figsize=(12,12/1.618034))
+    if centred:
+      axs[0,0].plot(xc*1e6,n/self.nc0)
+    else:
+      axs[0,0].plot(x*1e6,n/self.nc0)
+    axs[0,0].set_ylabel('n_e/n_c')
+    if centred:
+      axs[0,1].plot(xc*1e6,gr)
+    else:
+      axs[0,1].plot(x*1e6,gr)
+    axs[0,1].set_ylabel('Wave Gain [m/Ws^2]')
+    axs[1,0].semilogy(x*1e6,I0)
+    axs[1,0].set_ylabel('I0 [W/m^2]')
+    axs[1,0].set_xlabel('x [um]')
+    axs[1,1].semilogy(x*1e6,I1)
+    axs[1,1].set_ylabel('I1 [W/m^2]')
+    axs[1,1].set_xlabel('x [um]')
+    fig.suptitle(f'Mode: {self.mode}; SDL: {self.sdl}; Relativistic: {self.relativistic}; '\
+        +f'\nTe: {self.Te:0.2e} K; I00: {self.I0:0.2e} W/m^2; lambda0: {self.lambda0:0.2e} m')
+    plt.tight_layout()
+    plt.show()
