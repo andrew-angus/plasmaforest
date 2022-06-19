@@ -388,8 +388,11 @@ class srs_forest(laser_forest):
     return x,n,I0,I1,gr
 
   # 1D BVP solve with parent forest setting resonance conditions
-  def ray_trace_solve(self,xrange:tuple,nrange:tuple,ntype:str,I1_noise=0.0,I1_seed=0.0,points=101,\
-      plots=False,pump_depletion=True,absorption=False):
+  def ray_trace_solve(self,xrange:tuple,nrange:tuple,ntype:str, \
+      I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \
+      om1_seed:Optional[float]=None,points:Optional[int]=101, \
+      plots:Optional[bool]=False,pump_depletion:Optional[bool]=True, \
+      absorption:Optional[bool]=False):
 
     # Check SDL flag true
     if not self.sdl:
@@ -401,39 +404,38 @@ class srs_forest(laser_forest):
     cells = points - 1
     xc,n = den_profile(xrange,nrange,ntype,points,centred=True)
     
-    # Resonance solve on parent forest if not already
-    if self.omega2 is None or self.omega1 is None \
-        or self.k2 is None or self.k1 is None:
-      self.resonance_solve(undamped=True)
+    # Resonance range
+    grres, om1res = self.__resonance_range__(n)
 
-    # Setup list of srs forests for each density relevant to parent forest
-    rets = [self.__emw_change__(n[i],self.omega1,absorption) for i in range(cells)]
-    if absorption:
-      gr = np.array([rets[i][0] for i in range(cells)])
-      kappa0 = [rets[i][1] for i in range(cells)]
-      kappa1 = [rets[i][2] for i in range(cells)]
+    # Check seed inputs
+    if I1_seed > 1e-10 and om1_seed is None:
+      print('Seed Raman frequency not specified, defaulting to mid x-range resonant value')
+      om1_seed = om1res[points//2]
+    elif I1_seed > 1e-10:
+      seed = True
     else:
-      gr = np.array(rets)
-
-    # Initialise intensity arrays
+      om1_seed = om1res[-1]
+      seed = False
+    
+    # Initialise cell arrays and seed powers
     I0 = np.zeros_like(x)
     I1 = np.zeros_like(x)
+    I1n = I1_noise/om1res
+    om1 = np.ones_like(xc)
+    gr = np.zeros_like(xc)
     P0 = self.I0/self.omega0
-    P1 = I1_seed/self.omega1
-    
+    P1 = I1_seed/om1_seed
+
     # Raman ray class
     class rray:
-      def __init__(self,cid,act):
+      def __init__(self,cid,act,freq):
         self.cid = cid
         self.act = act
-
-    # Basic gain function
-    #def base_gain(i):
-      #return gr0[i]
+        self.freq = freq
 
     # Ray trace with SRS modelling
     conv = 1; niter = 0
-    while conv > 1e-2:
+    while conv > 1e-2 and niter < 100:
       # Initialisation
       I0old = copy.deepcopy(I0)
       I1old = copy.deepcopy(I1)
@@ -442,7 +444,8 @@ class srs_forest(laser_forest):
 
       # Add Raman Seed ray to list
       rrays = []
-      rrays.append(rray(cells-1,P1))
+      if seed:
+        rrays.append(rray(cells-1,P1,om1_seed))
       
       # Launch laser ray
       P = P0
@@ -457,16 +460,18 @@ class srs_forest(laser_forest):
 
         # SRS
         # Dominant signal
-        exch = gr[i]*P*I1old[i]*dx
-        rrays.append(rray(i-1,exch))
-        if pump_depletion:
-          P = np.maximum(0.0,P-exch)
+        exch = gr[i]*P*(I1old[i]/om1[i])*dx
+        if exch > 1e-15:
+          rrays.append(rray(i-1,exch,om1[i]))
+          if pump_depletion:
+            P = np.maximum(0.0,P-exch)
 
         # Noise signal
-        #exch = gr0[i]*P*I1old[i]*dx
-        #rrays.append(rray(i-1,exch))
-        #if pump_depletion:
-        #  P = np.maximum(0.0,P-exch)
+        exch = grres[i]*P*I1n[i]*dx
+        if exch > 1e-15:
+          rrays.append(rray(i-1,exch,om1res[i]))
+          if pump_depletion:
+            P = np.maximum(0.0,P-exch)
 
       # Update exit value
       I0[-1] += P
@@ -475,7 +480,8 @@ class srs_forest(laser_forest):
       for i in rrays:
         while i.cid >= 0:
           # Cell upate
-          I1[i.cid] += i.act
+          I1[i.cid] += i.act*i.freq
+          om1[i.cid] += i.act*i.freq**2
 
           # IB
           if absorption:
@@ -485,16 +491,26 @@ class srs_forest(laser_forest):
           i.cid -= 1
           
         # Update exit value
-        I1[-1] += i.act
+        I1[-1] += i.act*i.freq
+
+      # Update cell arrays for next iteration
+      om1 = np.where(I1[:-1] < 1e-15, om1res, om1/I1[:-1])
+      rets = [self.__emw_change__(n[i],om1[i],absorption) for i in range(cells)]
+      if absorption:
+        gr = np.array([rets[i][0] for i in range(cells)])
+        kappa0 = [rets[i][1] for i in range(cells)]
+        kappa1 = [rets[i][2] for i in range(cells)]
+      else:
+        gr = np.array(rets)
 
       # Calculate convergence condition
-      conv = np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old-I1))
+      conv = np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old[:-1]-I1[:-1])/om1)
       niter += 1
       print(f'Iteration: {niter}; Convergence: {conv}')
 
     # Convert to intensity from wave action
     I0 *= self.omega0
-    I1 *= self.omega1
+    #I1 *= self.omega1
 
     # Get Raman intensity array in proper order
     tmp = I1[-1]
