@@ -18,6 +18,7 @@ class laser_forest(wave_forest):
   def set_ndim(self,*args,**kwargs):
     super().set_ndim(*args,**kwargs)
     self.damping0 = None # Collisional damping rate
+    self.kappa0 = None
   def set_electrons(self,*args,**kwargs):
     super().set_electrons(*args,**kwargs)
     self.k0 = None # Laser wavenumber in plasma
@@ -26,9 +27,11 @@ class laser_forest(wave_forest):
     self.vg0 = None # Group velocity
     self.B0 = None # B-field
     self.damping0 = None # Collisional damping rate
+    self.kappa0 = None
   def set_ions(self,*args,**kwargs):
     super().set_ions(*args,**kwargs)
     self.damping0 = None # Collisional damping rate
+    self.kappa0 = None
 
   # Update intensity attribute
   def set_intensity(self,I0:floats):
@@ -64,6 +67,14 @@ class laser_forest(wave_forest):
     if self.omega0 is None:
       self.get_omega0()
     self.damping0 = self.emw_damping(self.omega0)
+
+  # Laser spatial damping
+  def get_kappa0(self):
+    if self.vg0 is None:
+      self.get_vg0()
+    if self.damping0 is None:
+      self.get_damping0()
+    self.kappa0 = self.damping0/self.vg0
 
   # Get phase velocity
   def get_vp0(self):

@@ -5,6 +5,7 @@ import astropy.constants as ac
 from scipy.optimize import newton, minimize
 from scipy.integrate import solve_ivp
 from scipy.special import kn
+import plasmapy as pp
 
 # Core class, mainly a wrapper of select plasmapy functionality
 # Currently restricted to single-ion species
@@ -138,6 +139,7 @@ class wave_forest(forest):
   # General EMW collisional damping rate
   # Use Kruer Ch 5
   def emw_damping(self,omega:floats) -> floats:
+    self.ion_check()
     if self.ompe is None:
       self.get_omp(species='e')
     if self.vthe is None:
@@ -172,6 +174,7 @@ class wave_forest(forest):
   # Calculated according to Rand - Collision Damping of Electron Plasma Waves (1965)
   def epw_coll_damping(self,omega:floats) -> floats:
     # Check for attributes
+    self.ion_check()
     if self.coulomb_log_ei is None:
       self.get_coulomb_log(species='ei')
     if self.vthe is None:

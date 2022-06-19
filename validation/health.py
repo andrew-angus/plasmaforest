@@ -10,11 +10,7 @@
 from plasmaforest.srs import *
 import scipy.constants as sc
 import numpy as np
-from plasmapy.utils.exceptions import RelativityWarning
 import warnings
-
-# Disable plasmapy relativity warning
-warnings.filterwarnings("ignore", category=RelativityWarning)
 
 # Setup case
 mode = 'fluid'

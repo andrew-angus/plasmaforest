@@ -1,6 +1,5 @@
 #!/bin/python3
 
-import plasmapy as pp
 import astropy.units as u
 import scipy.constants as sc
 import numpy as np
@@ -114,9 +113,7 @@ class forest:
   def get_omp(self,species:str):
     if species == 'e':
       self.electron_check()
-      ne = self.ne / u.m**3
-      ompe = pp.formulary.parameters.plasma_frequency(n=ne,particle='e-')
-      self.ompe = ompe.value
+      self.ompe = np.sqrt(sqr(sc.e)*self.ne/(sc.m_e*sc.epsilon_0))
     elif species == 'i':
       self.ion_check()
       self.ompi = np.sqrt(sqr(self.Z*sc.e)*self.ni/(self.mi*sc.epsilon_0))

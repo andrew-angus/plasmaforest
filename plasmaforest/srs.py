@@ -40,6 +40,7 @@ class srs_forest(laser_forest):
     self.gamma0 = None
     self.gamma = None
     self.rosenbluth = None
+    self.kappa1 = None
 
   # Set relativistic routine with nullifications
   def set_relativistic(self,relativistic:bool):
@@ -68,11 +69,10 @@ class srs_forest(laser_forest):
     self.gamma0 = None
     self.gamma = None
     self.rosenbluth = None
+    self.kappa1 = None
   def set_electrons(self,*args,**kwargs):
     super().set_electrons(*args,**kwargs)
-    self.omega1 = None
     self.k1 = None
-    self.omega2 = None
     self.k2 = None
     self.damping1 = None
     self.cdamping2 = None
@@ -82,11 +82,13 @@ class srs_forest(laser_forest):
     self.gamma0 = None
     self.gamma = None
     self.rosenbluth = None
+    self.kappa1 = None
   def set_ions(self,*args,**kwargs):
     super().set_ions(*args,**kwargs)
     self.damping1 = None
     self.cdamping2 = None
     self.gamma = None
+    self.kappa1 = None
   def set_intensity(self,*args,**kwargs):
     super().set_intensity(*args,**kwargs)
     self.gamma0 = None
@@ -102,6 +104,7 @@ class srs_forest(laser_forest):
     self.gamma0 = None
     self.gamma = None
     self.rosenbluth = None
+    self.kappa1 = None
   def set_frequencies(self,omega1:float,omega2:float):
     # Set attributes
     self.omega1 = omega1
@@ -112,6 +115,7 @@ class srs_forest(laser_forest):
     self.gamma0 = None
     self.gamma = None
     self.rosenbluth = None
+    self.kappa1 = None
 
   # Get matching wavenumbers and frequencies by either fluid or kinetic dispersion
   def resonance_solve(self,undamped:Optional[bool]=True):
@@ -186,14 +190,14 @@ class srs_forest(laser_forest):
 
   # Raman group velocity
   def get_vg1(self):
-    if self.omega1 is None or self.k1 is None:
-      self.resonance_solve()
+    if self.k1 is None:
+      self.get_k1()
     self.vg1 = self.emw_group_velocity(self.omega1,self.k1)
 
   # EPW group velocity
   def get_vg2(self):
-    if self.omega2 is None or self.k2 is None:
-      self.resonance_solve()
+    if self.k2 is None:
+      self.get_k2()
     if self.mode == 'fluid':
       self.vg2 = self.bohm_gross_group_velocity(self.omega2,self.k2)
     elif self.mode == 'kinetic':
@@ -203,6 +207,33 @@ class srs_forest(laser_forest):
         self.vg2 = self.kinetic_group_velocity(self.omega2,self.k2)
     else:
       raise Exception('Mode must be one of fluid or kinetic')
+
+  # Get raman wavenumber
+  def get_k1(self):
+    if self.omega1 is None:
+      self.resonance_solve()
+    else:
+      self.k1 = self.emw_dispersion(self.omega1,target='k')
+
+  # Get EPW wavenumber
+  def get_k2(self):
+    if self.omega2 is None:
+      self.resonance_solve()
+    else:
+      if relativistic:
+        raise Exception('get_k2 method not implemented for relativistic dispersion')
+      if mode == 'kinetic':
+        self.k2 = self.epw_kinetic_dispersion(self.omega2,target='k')
+      else:
+        self.k2 = self.bohm_gross(self.omega2,target='k')
+
+  # Raman spatial damping
+  def get_kappa1(self):
+    if self.vg1 is None:
+      self.get_vg1()
+    if self.damping1 is None:
+      self.get_damping1()
+    self.kappa1 = self.damping1/self.vg1
 
   # Get k1 by EMW dispersion
   #def get_k1(self):
@@ -290,7 +321,6 @@ class srs_forest(laser_forest):
     self.get_vos0()
     self.gamma0 = self.k2*self.vos0/4*self.ompe/np.sqrt(self.omega1*self.omega2)
 
-
   # Get damped infinite homogeneous growth rate
   def get_gamma(self):
     if self.gamma0 is None:
@@ -342,7 +372,7 @@ class srs_forest(laser_forest):
     x,n = den_profile(xrange,nrange,ntype,points)
     
     # Get gain for Raman seed at each point in space
-    gr = np.array([self.__emw_change__(n[i],self.omega1) for i in range(points)])
+    gr = np.array([self.__gain__(n[i],self.omega1) for i in range(points)])
     grf = PchipInterpolator(x,gr)
 
     # Initialise wave action arrays
@@ -405,12 +435,16 @@ class srs_forest(laser_forest):
     xc,n = den_profile(xrange,nrange,ntype,points,centred=True)
     
     # Resonance range
-    grres, om1res = self.__resonance_range__(n)
+    if absorption:
+      grres, om1res, kappa0 = self.__resonance_range__(n,absorption)
+    else:
+      grres, om1res = self.__resonance_range__(n,absorption)
 
     # Check seed inputs
     if I1_seed > 1e-10 and om1_seed is None:
       print('Seed Raman frequency not specified, defaulting to mid x-range resonant value')
       om1_seed = om1res[points//2]
+      seed = True
     elif I1_seed > 1e-10:
       seed = True
     else:
@@ -421,17 +455,18 @@ class srs_forest(laser_forest):
     I0 = np.zeros_like(x)
     I1 = np.zeros_like(x)
     I1n = I1_noise/om1res
+    om0 = self.omega0
     om1 = np.ones_like(xc)
     gr = np.zeros_like(xc)
-    P0 = self.I0/self.omega0
+    P0 = self.I0/om0
     P1 = I1_seed/om1_seed
 
     # Raman ray class
     class rray:
-      def __init__(self,cid,act,freq):
+      def __init__(self,cid,act,forest):
         self.cid = cid
         self.act = act
-        self.freq = freq
+        self.forest = forest
 
     # Ray trace with SRS modelling
     conv = 1; niter = 0
@@ -445,7 +480,8 @@ class srs_forest(laser_forest):
       # Add Raman Seed ray to list
       rrays = []
       if seed:
-        rrays.append(rray(cells-1,P1,om1_seed))
+        forest = self.__raman_mode__(n[cells-1],om1_seed)
+        rrays.append(rray(cells-1,P1,forest))
       
       # Launch laser ray
       P = P0
@@ -462,14 +498,16 @@ class srs_forest(laser_forest):
         # Dominant signal
         exch = gr[i]*P*(I1old[i]/om1[i])*dx
         if exch > 1e-15:
-          rrays.append(rray(i-1,exch,om1[i]))
+          forest = self.__raman_mode__(n[i-1],om1[i])
+          rrays.append(rray(i-1,exch,forest))
           if pump_depletion:
             P = np.maximum(0.0,P-exch)
 
         # Noise signal
         exch = grres[i]*P*I1n[i]*dx
         if exch > 1e-15:
-          rrays.append(rray(i-1,exch,om1res[i]))
+          forest = self.__raman_mode__(n[i-1],om1res[i])
+          rrays.append(rray(i-1,exch,forest))
           if pump_depletion:
             P = np.maximum(0.0,P-exch)
 
@@ -480,28 +518,24 @@ class srs_forest(laser_forest):
       for i in rrays:
         while i.cid >= 0:
           # Cell upate
-          I1[i.cid] += i.act*i.freq
-          om1[i.cid] += i.act*i.freq**2
+          I1[i.cid] += i.act*i.forest.omega1
+          om1[i.cid] += i.act*sqr(i.forest.omega1)
 
           # IB
           if absorption:
-            i.act *= np.exp(-2*dx*kappa1[i.cid])
+            i.forest.set_electrons(electrons=True,Te=self.Te,ne=n[i.cid])
+            i.forest.get_kappa1()
+            i.act *= np.exp(-2*dx*i.forest.kappa1)
 
           # Propagate
           i.cid -= 1
           
         # Update exit value
-        I1[-1] += i.act*i.freq
+        I1[-1] += i.act*i.forest.omega1
 
       # Update cell arrays for next iteration
       om1 = np.where(I1[:-1] < 1e-15, om1res, om1/I1[:-1])
-      rets = [self.__emw_change__(n[i],om1[i],absorption) for i in range(cells)]
-      if absorption:
-        gr = np.array([rets[i][0] for i in range(cells)])
-        kappa0 = [rets[i][1] for i in range(cells)]
-        kappa1 = [rets[i][2] for i in range(cells)]
-      else:
-        gr = np.array(rets)
+      gr = np.array([self.__gain__(n[i],om1[i]) for i in range(cells)])
 
       # Calculate convergence condition
       conv = np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old[:-1]-I1[:-1])/om1)
@@ -510,7 +544,6 @@ class srs_forest(laser_forest):
 
     # Convert to intensity from wave action
     I0 *= self.omega0
-    #I1 *= self.omega1
 
     # Get Raman intensity array in proper order
     tmp = I1[-1]
@@ -582,7 +615,7 @@ class srs_forest(laser_forest):
     for i in range(n1):
       print(i)
       for j in range(points):
-        gr[i,j] = self.__emw_change__(n[j],omega1s[i])
+        gr[i,j] = self.__gain__(n[j],omega1s[i])
       grf.append(PchipInterpolator(x,gr[i,:]))
 
     for i in range(n1):
@@ -615,7 +648,7 @@ class srs_forest(laser_forest):
         I1[i] = np.sum(res.sol(x)[1:,i]*omega1s)
       for i in range(points):
         om1[i] = np.sum(res.sol(x)[1:,i]*omega1s**2)/I1[i]
-        gr[i] = self.__emw_change__(n[i],om1[i])
+        gr[i] = self.__gain__(n[i],om1[i])
 
     else:
       I0cons = I0[0]
@@ -666,7 +699,7 @@ class srs_forest(laser_forest):
     elif om1_seed <= 0.0:
       raise Exception('Seed Raman frequency must be positive')
     else:
-      gr = np.array([self.__emw_change__(n[i],om1_seed) for i in range(len(x))])
+      gr = np.array([self.__gain__(n[i],om1_seed) for i in range(len(x))])
       grf = PchipInterpolator(x,gr)
       om1 = np.ones_like(x)*om1_seed
       om1f = PchipInterpolator(x,om1)
@@ -714,7 +747,7 @@ class srs_forest(laser_forest):
           else:
             om1[i] = om1res[i]
         om1mf = PchipInterpolator(x,om1)
-        gr = np.array([self.__emw_change__(n[i],om1[i]) for i in range(len(x))])
+        gr = np.array([self.__gain__(n[i],om1[i]) for i in range(len(x))])
         grf = PchipInterpolator(x,gr)
         conv = np.abs(I0[-1]-I0old)+np.abs(I1[0]-I1old)
         print(f'Convergence: {conv:0.2e}')
@@ -739,37 +772,41 @@ class srs_forest(laser_forest):
 
     return x,n,I0,I1,gr
 
-  # SRS gain function for any density and Raman frequency (and optionally absorption)
-  def __emw_change__(self,ne:float,om1:float,absorption:Optional[bool]=False):
-    birch = copy.deepcopy(self)
-    birch.set_electrons(electrons=True,Te=birch.Te,ne=ne)
-    birch.set_frequencies(om1,birch.omega0-om1)
+  # SRS gain function for any density and Raman frequency
+  def __gain__(self,ne:float,om1:float):
+    birch = self.__raman_mode__(ne,om1)
     birch.get_k0()
-    k1 = birch.emw_dispersion(om1,target='k')
-    birch.set_wavenumbers(k1,birch.k0+k1)
+    k1 = -birch.emw_dispersion(om1,target='k')
+    birch.set_wavenumbers(k1,birch.k0-k1)
     birch.get_gain_coeff()
-    if absorption:
-      birch.ion_check()
-      birch.get_vg0()
-      birch.get_vg1()
-      birch.get_damping0()
-      birch.get_damping1()
-      return birch.gain_coeff, birch.damping0/birch.vg0, birch.damping1/birch.vg1
-    else:
-      return birch.gain_coeff
+    return birch.gain_coeff
 
   # Resonance solve across a density range
-  def __resonance_range__(self,n:np.ndarray):
+  def __resonance_range__(self,n:np.ndarray,absorption:Optional[bool]=False):
     birches = []
     for i in range(len(n)):
       birches.append(copy.deepcopy(self))
       birches[i].set_electrons(electrons=True,Te=self.Te,ne=n[i])
       birches[i].resonance_solve()
       birches[i].get_gain_coeff()
+      if absorption:
+        birches[i].get_kappa0()
     om1res = np.array([i.omega1 for i in birches])
     grres = np.array([i.gain_coeff for i in birches])
-    return grres, om1res
+    if absorption:
+      kappa0 = np.array([i.kappa0 for i in birches])
+      return grres, om1res, kappa0
+    else:
+      return grres, om1res
 
+  # Creates copy of parent forest with new raman frequency and reference density
+  def __raman_mode__(self,ne,om1):
+    forest = copy.deepcopy(self)
+    forest.set_electrons(electrons=True,ne=ne,Te=self.Te)
+    forest.set_frequencies(om1,self.omega0-om1)
+    return forest
+
+  # Standard plotting routine
   def __srs_plots__(self,x:np.ndarray,n:np.ndarray,gr:np.ndarray, \
                     I0:np.ndarray,I1:np.ndarray, \
                     xc:Optional[np.ndarray]=None,centred:Optional[bool]=False):
