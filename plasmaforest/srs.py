@@ -436,9 +436,9 @@ class srs_forest(laser_forest):
     
     # Resonance range
     if absorption:
-      grres, om1res, kappa0 = self.__resonance_range__(n,absorption)
+      grres, om1res, ompe, k0, kappa0 = self.__resonance_range__(n,absorption)
     else:
-      grres, om1res = self.__resonance_range__(n,absorption)
+      grres, om1res, ompe, k0 = self.__resonance_range__(n,absorption)
 
     # Check seed inputs
     if I1_seed > 1e-10 and om1_seed is None:
@@ -524,6 +524,7 @@ class srs_forest(laser_forest):
           # IB
           if absorption:
             i.forest.set_electrons(electrons=True,Te=self.Te,ne=n[i.cid])
+            i.forest.ompe = ompe[i.cid]
             i.forest.get_kappa1()
             i.act *= np.exp(-2*dx*i.forest.kappa1)
 
@@ -535,7 +536,7 @@ class srs_forest(laser_forest):
 
       # Update cell arrays for next iteration
       om1 = np.where(I1[:-1] < 1e-15, om1res, om1/I1[:-1])
-      gr = np.array([self.__gain__(n[i],om1[i]) for i in range(cells)])
+      gr = np.array([self.__gain__(n[i],om1[i],ompe[i],k0[i]) for i in range(cells)])
 
       # Calculate convergence condition
       conv = np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old[:-1]-I1[:-1])/om1)
@@ -569,7 +570,7 @@ class srs_forest(laser_forest):
     x,n = den_profile(xrange,nrange,ntype,points)
 
     # Resonance solve for each density point
-    grres, om1res = self.__resonance_range__(n)
+    grres, om1res, ompe, k0 = self.__resonance_range__(n)
     om1resf = PchipInterpolator(x,om1res)
     grresf = PchipInterpolator(x,grres)
 
@@ -615,7 +616,7 @@ class srs_forest(laser_forest):
     for i in range(n1):
       print(i)
       for j in range(points):
-        gr[i,j] = self.__gain__(n[j],omega1s[i])
+        gr[i,j] = self.__gain__(n[j],omega1s[i],ompe[j],k0[j])
       grf.append(PchipInterpolator(x,gr[i,:]))
 
     for i in range(n1):
@@ -648,7 +649,7 @@ class srs_forest(laser_forest):
         I1[i] = np.sum(res.sol(x)[1:,i]*omega1s)
       for i in range(points):
         om1[i] = np.sum(res.sol(x)[1:,i]*omega1s**2)/I1[i]
-        gr[i] = self.__gain__(n[i],om1[i])
+        gr[i] = self.__gain__(n[i],om1[i],ompe[i],k0[i])
 
     else:
       I0cons = I0[0]
@@ -684,7 +685,7 @@ class srs_forest(laser_forest):
     x,n = den_profile(xrange,nrange,ntype,points)
 
     # Resonance solve for each density point
-    grres, om1res = self.__resonance_range__(n)
+    grres, om1res, ompe, k0 = self.__resonance_range__(n)
     grresf = PchipInterpolator(x,grres)
     om1resf = PchipInterpolator(x,om1res)
 
@@ -699,7 +700,7 @@ class srs_forest(laser_forest):
     elif om1_seed <= 0.0:
       raise Exception('Seed Raman frequency must be positive')
     else:
-      gr = np.array([self.__gain__(n[i],om1_seed) for i in range(len(x))])
+      gr = np.array([self.__gain__(n[i],om1_seed,ompe[i],k0[i]) for i in range(len(x))])
       grf = PchipInterpolator(x,gr)
       om1 = np.ones_like(x)*om1_seed
       om1f = PchipInterpolator(x,om1)
@@ -747,7 +748,7 @@ class srs_forest(laser_forest):
           else:
             om1[i] = om1res[i]
         om1mf = PchipInterpolator(x,om1)
-        gr = np.array([self.__gain__(n[i],om1[i]) for i in range(len(x))])
+        gr = np.array([self.__gain__(n[i],om1[i],ompe[i],k0[i]) for i in range(len(x))])
         grf = PchipInterpolator(x,gr)
         conv = np.abs(I0[-1]-I0old)+np.abs(I1[0]-I1old)
         print(f'Convergence: {conv:0.2e}')
@@ -773,9 +774,15 @@ class srs_forest(laser_forest):
     return x,n,I0,I1,gr
 
   # SRS gain function for any density and Raman frequency
-  def __gain__(self,ne:float,om1:float):
+  def __gain__(self,ne:float,om1:float, \
+               ompe:Optional[float]=None,k0:Optional[float]=None):
     birch = self.__raman_mode__(ne,om1)
-    birch.get_k0()
+    if k0 is None:
+      birch.get_k0()
+    else:
+      birch.k0 = k0
+    if ompe is not None:
+      birch.ompe = ompe
     k1 = -birch.emw_dispersion(om1,target='k')
     birch.set_wavenumbers(k1,birch.k0-k1)
     birch.get_gain_coeff()
@@ -793,11 +800,13 @@ class srs_forest(laser_forest):
         birches[i].get_kappa0()
     om1res = np.array([i.omega1 for i in birches])
     grres = np.array([i.gain_coeff for i in birches])
+    ompe = np.array([i.ompe for i in birches])
+    k0 = np.array([i.k0 for i in birches])
     if absorption:
       kappa0 = np.array([i.kappa0 for i in birches])
-      return grres, om1res, kappa0
+      return grres, om1res, ompe, k0, kappa0
     else:
-      return grres, om1res
+      return grres, om1res, ompe, k0
 
   # Creates copy of parent forest with new raman frequency and reference density
   def __raman_mode__(self,ne,om1):
