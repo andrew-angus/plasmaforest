@@ -3,7 +3,7 @@
 from .core import *
 from .laser import *
 from .wave import *
-from scipy.optimize import bisect
+from scipy.optimize import bisect,minimize,minimize_scalar
 from scipy.interpolate import PchipInterpolator
 from scipy.integrate import solve_bvp
 import matplotlib.pyplot as plt
@@ -166,6 +166,28 @@ class srs_forest(laser_forest):
     omega_ek = self.relativistic_dispersion(k2) # Relativistic dispersion
     return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
 
+  def alt_resonance_solve(self):
+
+    if self.omega0 is None:
+      self.get_omega0()
+    if self.k0 is None:
+      self.get_k0()
+
+    # Set frequency, calculate resulting gain
+    def obj_fun(om1):
+      self.omega1 = om1
+      self.omega2 = self.omega0 - om1
+      self.k1 = self.emw_dispersion(om1,target='k')
+      self.k2 = self.k0 + self.k1
+      self.get_gain_coeff()
+      return -self.gain_coeff
+
+    # Optimise objective function
+    k2 = self.k0 + self.omega0/sc.c*np.sqrt(1-2*self.ompe/self.omega0)
+    om2 = self.bohm_gross(k2,target='omega')
+    om1 = self.omega0 - om2
+    res = minimize(obj_fun,om1,tol=1e-14)
+
   # Raman collisional damping
   def get_damping1(self):
     if self.omega1 is None:
@@ -234,9 +256,6 @@ class srs_forest(laser_forest):
     if self.damping1 is None:
       self.get_damping1()
     self.kappa1 = self.damping1/self.vg1
-
-  # Get k1 by EMW dispersion
-  #def get_k1(self):
 
   # SRS gain coefficient calculations for various cases
   def get_gain_coeff(self):
