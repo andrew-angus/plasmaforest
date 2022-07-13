@@ -106,7 +106,7 @@ class wave_forest(forest):
     return -sqr(omp/(k*a))*dZfun(zeta)
 
   # Linear kinetic permittivity equation
-  def kinetic_permittivity(self,omega:flomplex,k:flomplex,full:Optional[bool]=True) -> flomplex:
+  def kinetic_permittivity(self,omega:flomplex,k:flomplex,full:Optional[bool]=False) -> flomplex:
     dis = 1 + self.susceptibility(omega=omega,k=k,species='e')
     if full:
       dis += np.sum(self.susceptibility(omega=omega,k=k,species='i'))
