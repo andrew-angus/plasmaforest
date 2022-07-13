@@ -56,7 +56,7 @@ class forest:
 
     # Check ion parameter specification
     arrs = [Z,Ti,ni,mi]
-    dtypes = [np.int_,np.float64,np.float64,np.float64]
+    dtypes = [np.float64,np.float64,np.float64,np.float64]
     for i in range(len(arrs)):
       if arrs[i] is None and nion > 0:
         raise Exception("nion > 0 but not all ion parameters specified")
