@@ -186,7 +186,7 @@ class srs_forest(laser_forest):
     k2 = self.k0 + self.omega0/sc.c*np.sqrt(1-2*self.ompe/self.omega0)
     om2 = self.bohm_gross(k2,target='omega')
     om1 = self.omega0 - om2
-    res = minimize(obj_fun,om1,tol=1e-14)
+    res = minimize(obj_fun,om1,tol=1e-14,method="Nelder-Mead")
 
   # Raman collisional damping
   def get_damping1(self):

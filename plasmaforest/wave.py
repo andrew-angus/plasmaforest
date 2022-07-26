@@ -254,14 +254,16 @@ class wave_forest(forest):
 
   # Solve kinetic dispersion to find natural omega/k from respective part
   def epw_kinetic_dispersion(self,arg:floats,target:str):
-    if self.dbye is None:
-      self.get_dbyl()
     if self.vthe is None:
       self.get_vth(species='e')
+    if self.ompe is None:
+      self.get_omp(species='e')
+
+    therm = self.vthe/self.ompe
 
     if target == 'omega':
       # Integrate along solution branch to desired k
-      K = arg*self.dbye
+      K = arg*therm
       zeta = self.zeta_int(K)
       omega = zeta*self.vthe*arg
       return omega
@@ -269,16 +271,15 @@ class wave_forest(forest):
     elif target == 'k':
       # Initial guess at k from fluid dispersion  
       kguess = self.bohm_gross(arg,target='k')
-      Kguess = kguess*self.dbye
-      # Iterate ode solver till correct real omega found
+      Kguess = kguess*therm
       # Objective function
       def omegar_diff(K):
         zeta = self.zeta_int(K)
-        omegar = np.real(zeta*self.vthe*K/self.dbye)
+        omegar = np.real(zeta*self.ompe*K)
         return omegar - arg
       # Solve for K
       res = newton(omegar_diff,Kguess,tol=np.finfo(np.float64).eps)
-      k = res/self.dbye
+      k = res/therm
       return k
 
     else:
@@ -292,7 +293,7 @@ class wave_forest(forest):
 
     # Get K0 value corresponding to this zeta
     dZfun0 = dZfun(self.zeta0)
-    self.K0 = np.real(np.sqrt(dZfun0/2))
+    self.K0 = np.real(np.sqrt(dZfun0))
 
   # Look for zero imag dZ from close initial guess
   def __zero_dZim__(self,zeta0:complex) -> complex:
@@ -308,27 +309,37 @@ class wave_forest(forest):
     return zeta
 
   # Integrate zeta ODE till desired K value
-  def zeta_int(self,Kf:float,refine:Optional[bool]=True) -> complex:
+  #def zeta_int(self,Kf:float,refine:Optional[bool]=False) -> complex:
+  def zeta_int(self,Kf:float) -> complex:
     # Get initial conditions if not already obtained
     if self.zeta0 is None or self.K0 is None:
       self.__natural_epw_zeta__()
 
     # ODE driver
     def zeta_ode(K,zeta):
-      return np.array([4*K/ddZfun(zeta)])
+      return np.array([2*K/ddZfun(zeta)])
 
     # Integrator
-    zetain = np.array([np.real(self.zeta0),np.imag(self.zeta0)])
-    #res = odeint(zeta_ode,zetain,Ksolve)
-    res = solve_ivp(zeta_ode,(self.K0,Kf),np.array([self.zeta0]))
+    print(zeta_ode(self.K0,self.zeta0))
+    res = solve_ivp(zeta_ode,(self.K0,Kf),np.array([self.zeta0])\
+        ,method='RK45',atol=1e-15,rtol=1e-15)
     zeta = res.y[-1,-1]
+    print(f'{Kf:0.30f}')
+    print(f'{zeta:10.30f}')
+    K = np.real(np.sqrt(dZfun(zeta)))
+    omega = zeta*self.ompe*Kf
+    k = Kf*self.ompe/self.vthe
+    print(self.kinetic_permittivity(omega,k,full=False),K/Kf)
     
     # Optionally refine result
-    if refine:
-      zeta = self.__zero_dZim__(zeta)
-      K = np.real(np.sqrt(dZfun(zeta)/2))
-      res = solve_ivp(zeta_ode,(K,Kf),np.array([zeta]))
-      zeta = res.y[-1,-1]
+    #if refine:
+    #  zeta = self.__zero_dZim__(zeta)
+    #  #K = np.real(np.sqrt(dZfun(zeta)/2))
+    #  K = np.real(np.sqrt(dZfun(zeta)))
+    #  res = solve_ivp(zeta_ode,(K,Kf),np.array([zeta]))
+    #  zeta = res.y[-1,-1]
+    #omega = zeta*self.ompe*Kf
+    #print(self.kinetic_permittivity(omega,k,full=False),K/Kf)
 
     return zeta
 
