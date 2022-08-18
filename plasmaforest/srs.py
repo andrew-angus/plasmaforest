@@ -3,7 +3,7 @@
 from .core import *
 from .laser import *
 from .wave import *
-from scipy.optimize import bisect,minimize,minimize_scalar
+from scipy.optimize import bisect,minimize,minimize_scalar,Bounds
 from scipy.interpolate import PchipInterpolator
 from scipy.integrate import solve_bvp
 import matplotlib.pyplot as plt
@@ -18,6 +18,7 @@ class srs_forest(laser_forest):
     self.set_mode(mode)
     self.set_relativistic(relativistic)
     self.set_strong_damping_limit(sdl)
+    self.srs = True
 
   # Check mode
   def __mode_check__(self,mode:str):
@@ -41,6 +42,7 @@ class srs_forest(laser_forest):
     self.gamma = None
     self.rosenbluth = None
     self.kappa1 = None
+    self.srs = True
 
   # Set relativistic routine with nullifications
   def set_relativistic(self,relativistic:bool):
@@ -49,6 +51,7 @@ class srs_forest(laser_forest):
     self.vg2 = None
     self.gamma = None
     self.rosenbluth = None
+    self.srs = True
 
   # Set strong damping limit routine with nullifications
   def set_strong_damping_limit(self,sdl:bool):
@@ -83,6 +86,7 @@ class srs_forest(laser_forest):
     self.gamma = None
     self.rosenbluth = None
     self.kappa1 = None
+    self.srs = True
   def set_ions(self,*args,**kwargs):
     super().set_ions(*args,**kwargs)
     self.damping1 = None
@@ -124,32 +128,51 @@ class srs_forest(laser_forest):
       self.get_omega0()
     if self.k0 is None:
       self.get_k0()
+    if self.nc0 is None:
+      self.get_nc0()
 
-    if self.mode == 'fluid':
-      # Solve for EPW wavenumber and set other unknowns bisecting fluid raman dispersion
-      self.k2 = bisect(self.__bsrs__,self.k0,2*self.k0) # Look between k0 and 2k0
-      self.omega2 = self.bohm_gross(self.k2,target='omega')
-
-    elif self.mode == 'kinetic':
-      # Solve similarly to above but replacing bohm-gross with linear kinetic dispersion
-      if self.relativistic:
-        self.k2 = bisect(self.__bsrs_kinr__,self.k0,2*self.k0)
-        self.omega2 = self.relativistic_dispersion(self.k2) # Undamped relativistic mode
-        self.get_ldamping2()
-      else:
-        if undamped:
-          self.k2 = bisect(self.__bsrs_kinu__,self.k0,2*self.k0)
-          self.omega2 = self.undamped_dispersion(self.k2) # Undamped mode
+    lbnd = self.ompe
+    failed = False
+    if self.ne > 0.25*self.nc0:
+      failed = True
+    else:
+      if self.mode == 'fluid':
+        # Solve for EPW wavenumber and set other unknowns bisecting fluid raman dispersion
+        ubnd = self.omega0-self.bohm_gross(self.k0,target='omega')
+        if lbnd < ubnd:
+          self.k2 = bisect(self.__bsrs__,self.k0,2*self.k0) # Look between k0 and 2k0
+          self.omega2 = self.bohm_gross(self.k2,target='omega')
+        else:
+          failed = True
+      elif self.mode == 'kinetic':
+        # Solve similarly to above but replacing bohm-gross with linear kinetic dispersion
+        if self.relativistic:
+          self.k2 = bisect(self.__bsrs_kinr__,self.k0,2*self.k0)
+          self.omega2 = self.relativistic_dispersion(self.k2) # Undamped relativistic mode
           self.get_ldamping2()
         else:
-          self.k2 = bisect(self.__bsrs_kin__,self.k0,2*self.k0)
-          omega2 = self.epw_kinetic_dispersion(self.k2,target='omega')
-          self.ldamping2 = -np.imag(omega2)
-          self.omega2 = np.real(omega2)
+          ubnd = self.omega0-np.real(self.epw_kinetic_dispersion(self.k0,target='omega'))
+          if lbnd < ubnd:
+            if undamped:
+              self.k2 = bisect(self.__bsrs_kinu__,self.k0,2*self.k0)
+              self.omega2 = self.undamped_dispersion(self.k2) # Undamped mode
+              self.get_ldamping2()
+            else:
+              self.k2 = bisect(self.__bsrs_kin__,self.k0,2*self.k0)
+              omega2 = self.epw_kinetic_dispersion(self.k2,target='omega')
+              self.ldamping2 = -np.imag(omega2)
+              self.omega2 = np.real(omega2)
+          else:
+            failed = True
 
     # Lastly set raman quantities by matching conditions
-    self.k1 = self.k0 - self.k2
-    self.omega1 = self.omega0 - self.omega2
+    if failed:
+      self.srs = False
+      self.omega1 = None; self.omega2 = None
+      self.k1 = None; self.k2 = None
+    else:
+      self.k1 = self.k0 - self.k2
+      self.omega1 = self.omega0 - self.omega2
 
   # Raman dispersion residual from k2
   def __bsrs__(self,k2):
@@ -172,21 +195,43 @@ class srs_forest(laser_forest):
       self.get_omega0()
     if self.k0 is None:
       self.get_k0()
+    if self.nc0 is None:
+      self.get_nc0()
 
     # Set frequency, calculate resulting gain
     def obj_fun(om1):
-      self.omega1 = om1
-      self.omega2 = self.omega0 - om1
-      self.k1 = self.emw_dispersion(om1,target='k')
+      self.omega1 = om1[0]
+      self.omega2 = self.omega0 - om1[0]
+      self.k1 = self.emw_dispersion(om1[0],target='k')
       self.k2 = self.k0 + self.k1
       self.get_gain_coeff()
       return -self.gain_coeff
 
-    # Optimise objective function
-    k2 = self.k0 + self.omega0/sc.c*np.sqrt(1-2*self.ompe/self.omega0)
-    om2 = self.bohm_gross(k2,target='omega')
-    om1 = self.omega0 - om2
-    res = minimize(obj_fun,om1,tol=1e-14,method="Nelder-Mead")
+    lbnd = self.ompe
+    failed = False
+    if self.ne > 0.25*self.nc0:
+      failed = True
+    else:
+      if self.mode == 'kinetic':
+        ubnd = self.omega0-np.real(self.epw_kinetic_dispersion(self.k0,target='omega'))
+      else:
+        ubnd = self.omega0-self.bohm_gross(self.k0,target='omega')
+      failed = False
+      if ubnd < lbnd:
+        failed = True
+      else:
+        # Optimise objective function
+        k2 = self.k0 + self.omega0/sc.c*np.sqrt(1-2*self.ompe/self.omega0)
+        om2 = self.bohm_gross(k2,target='omega')
+        om1 = np.minimum(np.maximum(self.omega0 - om2,lbnd),ubnd)
+        bnds = Bounds(lb=lbnd,ub=ubnd)
+        res = minimize(obj_fun,om1,tol=1e-14,bounds=bnds,method='Nelder-Mead')
+        #print(lbnd,ubnd,res.x,om1,self.omega0-om2)
+
+    if failed:
+      self.srs = False
+      self.omega1 = None; self.omega2 = None
+      self.k1 = None; self.k2 = None
 
   # Raman collisional damping
   def get_damping1(self):
@@ -279,54 +324,58 @@ class srs_forest(laser_forest):
         or self.k1 is None or self.k2 is None:
       self.resonance_solve()
 
-    # Calculate constants
-    K = np.abs(self.k2)*sqr(self.ompe)\
-        /np.sqrt(8*sc.m_e*self.ne*self.omega0*self.omega1*self.omega2)
-    gamma = (2+self.ndim)/self.ndim
-    prefac = 0.5*gamma
-    Kf = K/sqr(self.ompe)*np.abs(sqr(self.omega2)-prefac*sqr(self.vthe*self.k2))
+    if self.srs:
 
-    # Get gain coefficent for each case
-    if self.mode == 'fluid':
+      # Calculate constants
+      K = np.abs(self.k2)*sqr(self.ompe)\
+          /np.sqrt(8*sc.m_e*self.ne*self.omega0*self.omega1*self.omega2)
+      gamma = (2+self.ndim)/self.ndim
+      prefac = 0.5*gamma
+      Kf = K/sqr(self.ompe)*np.abs(sqr(self.omega2)-prefac*sqr(self.vthe*self.k2))
 
-      if self.sdl:
-        if self.ldamping2 is None:
-          self.get_ldamping2(force_kinetic=True)
-        if self.nion > 0:
-          if self.cdamping2 is None:
-            self.get_cdamping2()
-          nu2 = np.sum(self.cdamping2) + self.ldamping2
+      # Get gain coefficent for each case
+      if self.mode == 'fluid':
+
+        if self.sdl:
+          if self.ldamping2 is None:
+            self.get_ldamping2(force_kinetic=True)
+          if self.nion > 0:
+            if self.cdamping2 is None:
+              self.get_cdamping2()
+            nu2 = np.sum(self.cdamping2) + self.ldamping2
+          else:
+            nu2 = self.ldamping2
+
+          res = self.bohm_gross_res(self.omega2,self.k2)*0.5*self.omega2
+          nueff = nu2/(sqr(res)+sqr(nu2))
+          self.gain_coeff = 2*sqr(K)*nueff/(pwr(sc.c,4)*np.abs(self.k0*self.k1))
+          self.gain_coeff *= self.omega1*self.omega0
+
         else:
-          nu2 = self.ldamping2
+          self.gain_coeff = 2*Kf/(sqr(sc.c)*self.vthe*np.sqrt(prefac*\
+              np.abs(self.k0*self.k1*self.k2)))
 
-        res = self.bohm_gross_res(self.omega2,self.k2)*0.5*self.omega2
-        nueff = nu2/(sqr(res)+sqr(nu2))
-        self.gain_coeff = 2*sqr(K)*nueff/(pwr(sc.c,4)*np.abs(self.k0*self.k1))
-        self.gain_coeff *= self.omega1*self.omega0
+      elif self.mode == 'kinetic':
 
-      else:
-        self.gain_coeff = 2*Kf/(sqr(sc.c)*self.vthe*np.sqrt(prefac*\
-            np.abs(self.k0*self.k1*self.k2)))
+        if self.sdl:
 
-    elif self.mode == 'kinetic':
+          if self.relativistic:
+            perm = self.relativistic_permittivity(self.omega2,self.k2)
+          else:
+            perm = self.kinetic_permittivity(self.omega2,self.k2,full=False)
 
-      if self.sdl:
+          fac = -np.imag(1/perm)
+          self.gain_coeff = 4*sqr(K)*self.omega2*fac/\
+              (pwr(sc.c,4)*sqr(self.ompe)*np.abs(self.k0*self.k1))
+          self.gain_coeff *= self.omega1*self.omega0
 
-        if self.relativistic:
-          perm = self.relativistic_permittivity(self.omega2,self.k2)
         else:
-          perm = self.kinetic_permittivity(self.omega2,self.k2,full=False)
-
-        fac = -np.imag(1/perm)
-        self.gain_coeff = 4*sqr(K)*self.omega2*fac/\
-            (pwr(sc.c,4)*sqr(self.ompe)*np.abs(self.k0*self.k1))
-        self.gain_coeff *= self.omega1*self.omega0
-
-      else:
-        if self.vg2 is None:
-          self.get_vg2()
-        self.gain_coeff = sqr(self.ompe)*self.k2/(sqr(sc.c)*np.sqrt(2*sc.m_e*\
-            self.omega2*self.k0*np.abs(self.k1)*self.ne*self.vg2))
+          if self.vg2 is None:
+            self.get_vg2()
+          self.gain_coeff = sqr(self.ompe)*self.k2/(sqr(sc.c)*np.sqrt(2*sc.m_e*\
+              self.omega2*self.k0*np.abs(self.k1)*self.ne*self.vg2))
+    else:
+      self.gain_coeff = 0.0
 
   # Get undamped infinite homogeneous growth rate
   def get_gamma0(self):
@@ -584,7 +633,7 @@ class srs_forest(laser_forest):
 
   # Ray trace solver with more flexibility in coordinates, temp and den profiles
   def ray_trace_solve2(self,x:np.ndarray,n:np.ndarray,Te:np.ndarray, \
-      I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \
+      Ti:Optional[np.ndarray]=None,I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \
       om1_seed:Optional[float]=None, P0:Optional[float]=None, \
       plots:Optional[bool]=False,pump_depletion:Optional[bool]=True, \
       absorption:Optional[bool]=False,geometry:Optional[str]='planar'):
@@ -600,7 +649,7 @@ class srs_forest(laser_forest):
     
     # Resonance range
     if absorption:
-      grres, om1res, ompe, k0, kappa0 = self.__resonance_range__(n,absorption,Te)
+      grres, om1res, ompe, k0, kappa0 = self.__resonance_range__(n,absorption,Te,Ti)
     else:
       grres, om1res, ompe, k0 = self.__resonance_range__(n,absorption,Te)
 
@@ -618,7 +667,7 @@ class srs_forest(laser_forest):
     # Initialise cell arrays and seed powers
     I0 = np.zeros_like(x)
     I1 = np.zeros_like(x)
-    I1n = I1_noise/om1res
+    I1n = I1_noise/np.maximum(om1res,1e-153)
     om0 = self.omega0
     om1 = np.ones_like(xc)
     gr = np.zeros_like(xc)
@@ -652,6 +701,7 @@ class srs_forest(laser_forest):
         self.forest = forest
 
     # Ray trace with SRS modelling
+    print('starting ray tracing')
     conv = 1; niter = 0; ra_frac = 0.3
     while conv > 1e-2 and niter < 100:
       # Initialisation
@@ -664,7 +714,7 @@ class srs_forest(laser_forest):
       rrays = []
       if seed:
         forest = self.__raman_mode__(n[cells-1],om1_seed,Te[cells-1])
-        rrays.append(rray(cells-1,P1,forest))
+        rrays.append(rray(cells-1,P1,-1,forest))
       
       # Launch laser ray
       l = lray(0,P0,1)
@@ -686,7 +736,7 @@ class srs_forest(laser_forest):
 
           # SRS
           # Dominant signal
-          exch = np.minimum(gr[l.cid]*Wcell*(I1old[l.cid]/om1[l.cid])*dr[l.cid],Wcell)
+          exch = np.minimum(gr[l.cid]*Wcell*(I1old[l.cid]/np.maximum(om1[l.cid],1e-153))*dr[l.cid],Wcell)
           if exch > 1e-153:
             Wcell -= exch
             pact = exch*drV[l.cid]
@@ -696,11 +746,11 @@ class srs_forest(laser_forest):
               l.pwr = l.pwr-pact*self.omega0
 
           # Noise signal
-          exch = np.minimum(gr[l.cid]*Wcell*I1n[l.cid]*dr[l.cid],Wcell)
+          exch = np.minimum(grres[l.cid]*Wcell*I1n[l.cid]*dr[l.cid],Wcell)
           if exch > 1e-153:
             pact = exch*drV[l.cid]
             forest = self.__raman_mode__(n[l.cid-1],om1res[l.cid],Te[l.cid-1])
-            rrays.append(rray(l.cid-1,pact*om1[l.cid],-l.dire,forest))
+            rrays.append(rray(l.cid-1,pact*om1res[l.cid],-l.dire,forest))
             if pump_depletion:
               l.pwr = l.pwr-pact*self.omega0
 
@@ -729,6 +779,8 @@ class srs_forest(laser_forest):
             # IB
             if absorption:
               r.forest.set_electrons(electrons=True,Te=Te[r.cid],ne=n[r.cid])
+              r.forest.set_ions(nion=self.nion,Ti=Ti[r.cid]*np.ones(self.nion),\
+                  ni=n[r.cid]/self.Z,Z=self.Z,mi=self.mi)
               r.forest.ompe = ompe[r.cid]
               r.forest.get_kappa1()
               r.pwr *= 1-np.minimum(r.forest.kappa1*dr[r.cid],1)
@@ -739,17 +791,25 @@ class srs_forest(laser_forest):
               break
 
           # Propagate
-          r.cid -= 1
+          r.cid += r.dire
           
         # Update exit value
         I1[-1] += r.pwr*drV[-1]
 
       # Update cell arrays for next iteration
-      om1 = np.where(I1[:-1] < 1e-153, om1res, om1/I1[:-1])
-      gr = np.array([self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i]) for i in range(cells)])
+      for i in range(cells):
+        if I1[i] > 1e-153:
+          om1[i] /= I1[i]
+          gr[i] = self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i])
+        else:
+          om1[i] = 0.0
+          gr[i] = 0.0
+      #om1 = np.where(I1[:-1] < 1e-153, om1res, om1/I1[:-1])
+      #gr = np.zeros(cells)
+      #gr = np.array([self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i]) for i in range(cells)])
 
       # Calculate convergence condition
-      conv = np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old[:-1]-I1[:-1])/om1)
+      conv = np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old[:-1]-I1[:-1])/np.maximum(om1,1e-153))
       niter += 1
       print(f'Iteration: {niter}; Convergence: {conv}')
 
@@ -777,9 +837,13 @@ class srs_forest(laser_forest):
     x = np.linspace(xrange[0],xrange[1],points)
     xc,n = den_profile(xrange,nrange,ntype,points,centred=True)
     Te = np.ones_like(n)*self.Te
+    if self.Ti is not None:
+      Ti = np.ones_like(n)*self.Ti
+    else:
+      Ti = None
     P0 = self.I0#/self.omega0
 
-    return self.ray_trace_solve2(x,n,Te,I1_noise,I1_seed,om1_seed,P0,plots,\
+    return self.ray_trace_solve2(x,n,Te,Ti,I1_noise,I1_seed,om1_seed,P0,plots,\
         pump_depletion,absorption,'planar')
 
   # Extension of BVP solver to include wave mixing from noise sources
@@ -875,7 +939,6 @@ class srs_forest(laser_forest):
       for i in range(points):
         om1[i] = np.sum(res.sol(x)[1:,i]*omega1s**2)/I1[i]
         gr[i] = self.__gain__(n[i],om1[i],ompe[i],k0[i])
-
     else:
       I0cons = I0[0]
       def Fsrs(xi,Iin):
@@ -1015,7 +1078,7 @@ class srs_forest(laser_forest):
 
   # Resonance solve across a density range
   def __resonance_range__(self,n:np.ndarray,absorption:Optional[bool]=False,\
-      Te:Optional[np.ndarray]=None):
+      Te:Optional[np.ndarray]=None,Ti:Optional[np.ndarray]=None):
     birches = []
     for i in range(len(n)):
       birches.append(copy.deepcopy(self))
@@ -1023,9 +1086,15 @@ class srs_forest(laser_forest):
         birches[i].set_electrons(electrons=True,Te=self.Te,ne=n[i])
       else:
         birches[i].set_electrons(electrons=True,Te=Te[i],ne=n[i])
-      birches[i].resonance_solve()
+      birches[i].alt_resonance_solve()
+      #birches[i].resonance_solve()
       birches[i].get_gain_coeff()
+      if self.omega1 is None:
+        birches[i].omega1 = 0.0
       if absorption:
+        if Ti is not None:
+          birches[i].set_ions(nion=self.nion,Ti=Ti[i]*np.ones(self.nion),\
+              ni=n[i]/self.Z,Z=self.Z,mi=self.mi)
         birches[i].get_kappa0()
     om1res = np.array([i.omega1 for i in birches])
     grres = np.array([i.gain_coeff for i in birches])

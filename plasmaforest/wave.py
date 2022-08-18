@@ -320,26 +320,12 @@ class wave_forest(forest):
       return np.array([2*K/ddZfun(zeta)])
 
     # Integrator
-    print(zeta_ode(self.K0,self.zeta0))
     res = solve_ivp(zeta_ode,(self.K0,Kf),np.array([self.zeta0])\
-        ,method='RK45',atol=1e-15,rtol=1e-15)
+        ,method='RK45',atol=1e-10,rtol=1e-10)
     zeta = res.y[-1,-1]
-    print(f'{Kf:0.30f}')
-    print(f'{zeta:10.30f}')
     K = np.real(np.sqrt(dZfun(zeta)))
     omega = zeta*self.ompe*Kf
     k = Kf*self.ompe/self.vthe
-    print(self.kinetic_permittivity(omega,k,full=False),K/Kf)
-    
-    # Optionally refine result
-    #if refine:
-    #  zeta = self.__zero_dZim__(zeta)
-    #  #K = np.real(np.sqrt(dZfun(zeta)/2))
-    #  K = np.real(np.sqrt(dZfun(zeta)))
-    #  res = solve_ivp(zeta_ode,(K,Kf),np.array([zeta]))
-    #  zeta = res.y[-1,-1]
-    #omega = zeta*self.ompe*Kf
-    #print(self.kinetic_permittivity(omega,k,full=False),K/Kf)
 
     return zeta
 
@@ -364,7 +350,6 @@ class wave_forest(forest):
       return np.array([4*K/(-2*Zr+4*zeta+4*zeta*Zr)])
 
     # Integrator
-    print(Kf)
     K0 = 0.1630896799156106
     zeta0 = 4.5154157506680495
     res = solve_ivp(zetar_ode,(K0,Kf),np.array([zeta0]))
@@ -377,7 +362,6 @@ class wave_forest(forest):
       K = newton(reps,Kf)
       res = solve_ivp(zetar_ode,(K,Kf),np.array([zeta]))
       zeta = res.y[-1,-1]
-    print(zeta)
 
     return zeta
 
