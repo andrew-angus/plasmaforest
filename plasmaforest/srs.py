@@ -226,7 +226,6 @@ class srs_forest(laser_forest):
         om1 = np.minimum(np.maximum(self.omega0 - om2,lbnd),ubnd)
         bnds = Bounds(lb=lbnd,ub=ubnd)
         res = minimize(obj_fun,om1,tol=1e-14,bounds=bnds,method='Nelder-Mead')
-        #print(lbnd,ubnd,res.x,om1,self.omega0-om2)
 
     if failed:
       self.srs = False
@@ -667,7 +666,8 @@ class srs_forest(laser_forest):
     # Initialise cell arrays and seed powers
     I0 = np.zeros_like(x)
     I1 = np.zeros_like(x)
-    I1n = I1_noise/np.maximum(om1res,1e-153)
+    om1res = np.where(om1res > 1e-153, om1res, 0.0)
+    I1n = np.where(om1res > 1e-153, I1_noise/np.maximum(om1res,1e-153), 0.0)
     om0 = self.omega0
     om1 = np.ones_like(xc)
     gr = np.zeros_like(xc)
@@ -676,14 +676,14 @@ class srs_forest(laser_forest):
     P1 = I1_seed#om1_seed
 
     # Cell volumes 
-    dr = np.diff(x)
+    dr = np.abs(np.diff(x))
     if geometry == 'planar':
       drV = np.ones_like(dr)
     elif geometry == 'cylindrical':
-      V = np.array([np.pi*(x[i]**2-x[i-1]**2) for i in range(1,points)])
+      V = np.array([np.pi*(x[i]**2-x[i+1]**2) for i in range(points-1)])
       drV = dr/V
     elif geometry == 'spherical':
-      V = np.array([4/3*np.pi*(x[i]**3-x[i-1]**3) for i in range(1,points)])
+      V = np.array([4/3*np.pi*(x[i]**3-x[i+1]**3) for i in range(points-1)])
       drV = dr/V
 
     # Laser ray class
@@ -702,8 +702,8 @@ class srs_forest(laser_forest):
 
     # Ray trace with SRS modelling
     print('starting ray tracing')
-    conv = 1; niter = 0; ra_frac = 0.3
-    while conv > 1e-2 and niter < 100:
+    conv = 2; niter = 0; ra_frac = 0.3
+    while conv > 1 and niter < 100:
       # Initialisation
       I0old = copy.deepcopy(I0)
       I1old = copy.deepcopy(I1)
@@ -731,26 +731,26 @@ class srs_forest(laser_forest):
 
           # IB
           if absorption:
-            l.pwr *= 1-np.minimum(kappa0[l.cid]*dr[l.cid],1)
+            l.pwr *= 1-np.minimum(2*kappa0[l.cid]*dr[l.cid],1)
             Wcell = l.pwr*lfac
 
           # SRS
           # Dominant signal
-          exch = np.minimum(gr[l.cid]*Wcell*(I1old[l.cid]/np.maximum(om1[l.cid],1e-153))*dr[l.cid],Wcell)
+          exch = np.minimum(gr[l.cid]*Wcell*I1old[l.cid]*dr[l.cid],Wcell)
           if exch > 1e-153:
             Wcell -= exch
-            pact = exch*drV[l.cid]
+            pact = exch/drV[l.cid]
             forest = self.__raman_mode__(n[l.cid-1],om1[l.cid],Te[l.cid-1])
-            rrays.append(rray(l.cid-1,pact*om1[l.cid],-l.dire,forest))
+            rrays.append(rray(l.cid-l.dire,pact*om1[l.cid],-l.dire,forest))
             if pump_depletion:
-              l.pwr = l.pwr-pact*self.omega0
+              l.pwr -= pact*self.omega0
 
           # Noise signal
           exch = np.minimum(grres[l.cid]*Wcell*I1n[l.cid]*dr[l.cid],Wcell)
           if exch > 1e-153:
-            pact = exch*drV[l.cid]
+            pact = exch/drV[l.cid]
             forest = self.__raman_mode__(n[l.cid-1],om1res[l.cid],Te[l.cid-1])
-            rrays.append(rray(l.cid-1,pact*om1res[l.cid],-l.dire,forest))
+            rrays.append(rray(l.cid-l.dire,pact*om1res[l.cid],-l.dire,forest))
             if pump_depletion:
               l.pwr = l.pwr-pact*self.omega0
 
@@ -777,14 +777,14 @@ class srs_forest(laser_forest):
             om1[r.cid] += Wcell*sqr(r.forest.omega1)
 
             # IB
-            if absorption:
-              r.forest.set_electrons(electrons=True,Te=Te[r.cid],ne=n[r.cid])
-              r.forest.set_ions(nion=self.nion,Ti=Ti[r.cid]*np.ones(self.nion),\
-                  ni=n[r.cid]/self.Z,Z=self.Z,mi=self.mi)
-              r.forest.ompe = ompe[r.cid]
-              r.forest.get_kappa1()
-              r.pwr *= 1-np.minimum(r.forest.kappa1*dr[r.cid],1)
-              Wcell = r.pwr*rfac
+            #if absorption:
+            #  r.forest.set_electrons(electrons=True,Te=Te[r.cid],ne=n[r.cid])
+            #  r.forest.set_ions(nion=self.nion,Ti=Ti[r.cid]*np.ones(self.nion),\
+            #      ni=n[r.cid]/self.Z,Z=self.Z,mi=self.mi)
+            #  r.forest.ompe = ompe[r.cid]
+            #  r.forest.get_kappa1()
+            #  r.pwr *= 1-np.minimum(2*r.forest.kappa1*dr[r.cid],1)
+            #  Wcell = r.pwr*rfac
 
             # Lower power threshold
             if r.pwr < 1e-153:
@@ -794,32 +794,43 @@ class srs_forest(laser_forest):
           r.cid += r.dire
           
         # Update exit value
-        I1[-1] += r.pwr*drV[-1]
+        #I1[-1] += r.pwr*drV[-1]
 
       # Update cell arrays for next iteration
       for i in range(cells):
         if I1[i] > 1e-153:
           om1[i] /= I1[i]
           gr[i] = self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i])
+          I1[i] /= om1[i]
         else:
           om1[i] = 0.0
           gr[i] = 0.0
-      #om1 = np.where(I1[:-1] < 1e-153, om1res, om1/I1[:-1])
-      #gr = np.zeros(cells)
-      #gr = np.array([self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i]) for i in range(cells)])
+          I1[i] = 0.0
 
       # Calculate convergence condition
-      conv = np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old[:-1]-I1[:-1])/np.maximum(om1,1e-153))
+      conv = np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old[:-1]-I1[:-1]))
       niter += 1
       print(f'Iteration: {niter}; Convergence: {conv}')
 
+    for i in range(cells):
+      if n[i] < self.nc0:
+        print(n[i]/self.nc0)
+        print(I0[i])
+        print(I1[i])
+        print(om1[i],om1res[i])
+        print(gr[i], grres[i])
+        print(gr[i]*I1[i],grres[i]*I1n[i])
+        print('')
+
     # Convert to intensity from wave action
     I0 *= self.omega0
+    I1[:-1] *= om1
+    #I1[-1] *= om1[0]
 
     # Get Raman intensity array in proper order
-    tmp = I1[-1]
-    I1[1:] = I1[:-1]
-    I1[0] = tmp
+    #tmp = I1[-1]
+    #I1[1:] = I1[:-1]
+    #I1[0] = tmp
 
     # Optionally plot
     if plots:
@@ -1086,10 +1097,11 @@ class srs_forest(laser_forest):
         birches[i].set_electrons(electrons=True,Te=self.Te,ne=n[i])
       else:
         birches[i].set_electrons(electrons=True,Te=Te[i],ne=n[i])
+      #if n[i] > 0.01*self.nc0:
       birches[i].alt_resonance_solve()
       #birches[i].resonance_solve()
       birches[i].get_gain_coeff()
-      if self.omega1 is None:
+      if birches[i].omega1 is None:
         birches[i].omega1 = 0.0
       if absorption:
         if Ti is not None:
@@ -1101,7 +1113,7 @@ class srs_forest(laser_forest):
     ompe = np.array([i.ompe for i in birches])
     k0 = np.array([i.k0 for i in birches])
     if absorption:
-      kappa0 = np.array([i.kappa0 for i in birches])
+      kappa0 = np.array([np.sum(i.kappa0) for i in birches])
       return grres, om1res, ompe, k0, kappa0
     else:
       return grres, om1res, ompe, k0
@@ -1133,14 +1145,14 @@ class srs_forest(laser_forest):
       axs[0,1].plot(xc*1e6,gr)
     else:
       axs[0,1].plot(x*1e6,gr)
-    axs[0,1].set_ylabel('Wave Gain [m/Ws^2]')
+    axs[0,1].set_ylabel('Wave Gain [m/Ws\^2]')
     axs[1,0].semilogy(x*1e6,I0)
-    axs[1,0].set_ylabel('I0 [W/m^2]')
+    axs[1,0].set_ylabel('I0 [W/m\^2]')
     axs[1,0].set_xlabel('x [um]')
     axs[1,1].semilogy(x*1e6,I1)
-    axs[1,1].set_ylabel('I1 [W/m^2]')
+    axs[1,1].set_ylabel('I1 [W/m\^2]')
     axs[1,1].set_xlabel('x [um]')
     fig.suptitle(f'Mode: {self.mode}; SDL: {self.sdl}; Relativistic: {self.relativistic}; '\
-        +f'\nTe: {self.Te:0.2e} K; I00: {self.I0:0.2e} W/m^2; lambda0: {self.lambda0:0.2e} m')
+        +f'\nTe: {self.Te:0.2e} K; I00: {self.I0:0.2e} W/m\^2; lambda0: {self.lambda0:0.2e} m')
     plt.tight_layout()
     plt.show()
