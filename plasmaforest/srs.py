@@ -8,6 +8,7 @@ from scipy.interpolate import PchipInterpolator
 from scipy.integrate import solve_bvp
 import matplotlib.pyplot as plt
 import copy
+import sys
 
 # SRS forest, three modes: laser, raman, epw
 # Currently direct backscatter only
@@ -217,14 +218,14 @@ class srs_forest(laser_forest):
       else:
         ubnd = self.omega0-self.bohm_gross(self.k0,target='omega')
       failed = False
-      if ubnd < lbnd:
+      if ubnd-1 < lbnd+1:
         failed = True
       else:
         # Optimise objective function
         k2 = self.k0 + self.omega0/sc.c*np.sqrt(1-2*self.ompe/self.omega0)
         om2 = self.bohm_gross(k2,target='omega')
-        om1 = np.minimum(np.maximum(self.omega0 - om2,lbnd),ubnd)
-        bnds = Bounds(lb=lbnd,ub=ubnd)
+        om1 = np.minimum(np.maximum(self.omega0 - om2,lbnd+1),ubnd-1)
+        bnds = Bounds(lb=lbnd+1,ub=ubnd-1)
         res = minimize(obj_fun,om1,tol=1e-14,bounds=bnds,method='Nelder-Mead')
 
     if failed:
@@ -375,6 +376,10 @@ class srs_forest(laser_forest):
               self.omega2*self.k0*np.abs(self.k1)*self.ne*self.vg2))
     else:
       self.gain_coeff = 0.0
+
+    if np.isnan(self.gain_coeff):
+      self.gain_coeff = 0.0
+      
 
   # Get undamped infinite homogeneous growth rate
   def get_gamma0(self):
