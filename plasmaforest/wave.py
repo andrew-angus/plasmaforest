@@ -150,8 +150,32 @@ class wave_forest(forest):
       self.get_coulomb_log(species='ei')
     vth1Drms = self.vthe/np.sqrt(2)
     impact = np.log(np.exp(self.coulomb_log_ei)/self.dbye*(vth1Drms/omega))
+    print(impact)
     return sqr(self.ompe/omega)/(3*pwr(2*np.pi,3/2))*self.Z \
         /(self.ne+np.sum(self.ni))*pwr(self.ompe/vth1Drms,3)*self.ompe*impact/2
+
+  # Calculate parts of emw damping independent of wave frequency
+  def emw_damping_facs(self,omega:floats) -> Tuple[floats,floats]:
+    self.ion_check()
+    if self.ompe is None:
+      self.get_omp(species='e')
+    if self.vthe is None:
+      self.get_vth(species='e')
+    if self.dbyl is None:
+      self.get_dbyl()
+    if self.coulomb_log_ei is None:
+      self.get_coulomb_log(species='ei')
+    vth1Drms = self.vthe/np.sqrt(2)
+    logfac = np.exp(self.coulomb_log_ei)/self.dbye*vth1Drms
+    nufac = sqr(self.ompe)/(3*pwr(2*np.pi,3/2))*self.Z \
+        /(self.ne+np.sum(self.ni))*pwr(self.ompe/vth1Drms,3)*self.ompe/2
+    return logfac, nufac
+
+  # Optimised emw damping calc for e.g. Raman damping at different frequencies
+  def emw_damping_opt(self,omega:floats,logfac:floats,nufac:floats) -> floats:
+    impact = np.log(logfac/omega)
+    ominv = 1/omega
+    return sqr(ominv)*nufac*impact
   
   # Refractive index function
   def emw_ri(self,nc:floats) -> floats:
