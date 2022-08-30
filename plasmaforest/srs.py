@@ -514,7 +514,8 @@ class srs_forest(laser_forest):
     
     # Resonance range
     if absorption:
-      grres, om1res, ompe, k0, kappa0 = self.__resonance_range__(n,absorption)
+      grres, om1res, ompe, k0, kappa0, logfac, nufac = \
+          self.__resonance_range__(n,absorption)
     else:
       grres, om1res, ompe, k0 = self.__resonance_range__(n,absorption)
 
@@ -653,7 +654,8 @@ class srs_forest(laser_forest):
     
     # Resonance range
     if absorption:
-      grres, om1res, ompe, k0, kappa0 = self.__resonance_range__(n,absorption,Te,Ti)
+      grres, om1res, ompe, k0, kappa0, logfac, nufac = \
+          self.__resonance_range__(n,absorption,Te,Ti)
     else:
       grres, om1res, ompe, k0 = self.__resonance_range__(n,absorption,Te)
 
@@ -782,14 +784,15 @@ class srs_forest(laser_forest):
             om1[r.cid] += Wcell*sqr(r.forest.omega1)
 
             # IB
-            #if absorption:
-            #  r.forest.set_electrons(electrons=True,Te=Te[r.cid],ne=n[r.cid])
-            #  r.forest.set_ions(nion=self.nion,Ti=Ti[r.cid]*np.ones(self.nion),\
-            #      ni=n[r.cid]/self.Z,Z=self.Z,mi=self.mi)
-            #  r.forest.ompe = ompe[r.cid]
-            #  r.forest.get_kappa1()
-            #  r.pwr *= 1-np.minimum(2*r.forest.kappa1*dr[r.cid],1)
-            #  Wcell = r.pwr*rfac
+            if absorption:
+              r.forest.set_electrons(electrons=True,Te=Te[r.cid],ne=n[r.cid])
+              r.forest.ompe = ompe[r.cid]
+              r.forest.k1 = r.forest.emw_dispersion(r.forest.omega1,target='k')
+              r.forest.get_vg1()
+              kappa1 = np.sum(r.forest.emw_damping_opt(r.forest.omega1,\
+                  logfac[:,r.cid],nufac[:,r.cid]))/r.forest.vg1
+              r.pwr *= 1-np.minimum(2*kappa1*dr[r.cid],1)
+              Wcell = r.pwr*rfac
 
             # Lower power threshold
             if r.pwr < 1e-153:
@@ -919,7 +922,6 @@ class srs_forest(laser_forest):
     grf = []
     gr = np.zeros((n1,points))
     for i in range(n1):
-      print(i)
       for j in range(points):
         gr[i,j] = self.__gain__(n[j],omega1s[i],ompe[j],k0[j])
       grf.append(PchipInterpolator(x,gr[i,:]))
@@ -1119,7 +1121,11 @@ class srs_forest(laser_forest):
     k0 = np.array([i.k0 for i in birches])
     if absorption:
       kappa0 = np.array([np.sum(i.kappa0) for i in birches])
-      return grres, om1res, ompe, k0, kappa0
+      logfac = np.zeros((self.nion,len(kappa0)))
+      nufac = np.zeros_like(logfac)
+      for i,j in enumerate(birches):
+        logfac[:,i], nufac[:,i] = j.emw_damping_facs()
+      return grres, om1res, ompe, k0, kappa0, logfac, nufac
     else:
       return grres, om1res, ompe, k0
 
@@ -1131,6 +1137,9 @@ class srs_forest(laser_forest):
     else:
       forest.set_electrons(electrons=True,ne=ne,Te=Te)
     forest.set_frequencies(om1,self.omega0-om1)
+    forest.get_k0()
+    k1 = forest.emw_dispersion(om1,target='k')
+    forest.set_wavenumbers(k1,forest.k0+k1)
     forest.get_nc1()
     return forest
 
