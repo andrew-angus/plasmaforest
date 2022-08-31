@@ -639,7 +639,7 @@ class srs_forest(laser_forest):
   # Ray trace solver with more flexibility in coordinates, temp and den profiles
   def ray_trace_solve2(self,x:np.ndarray,n:np.ndarray,Te:np.ndarray, \
       Ti:Optional[np.ndarray]=None,I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \
-      om1_seed:Optional[float]=None, P0:Optional[float]=None, \
+      om1_seed:Optional[float]=None, P0:Optional[float]=None,\
       plots:Optional[bool]=False,pump_depletion:Optional[bool]=True, \
       absorption:Optional[bool]=False,geometry:Optional[str]='planar'):
 
@@ -669,18 +669,6 @@ class srs_forest(laser_forest):
     else:
       om1_seed = om1res[-1]
       seed = False
-    
-    # Initialise cell arrays and seed powers
-    I0 = np.zeros_like(x)
-    I1 = np.zeros_like(x)
-    om1res = np.where(om1res > 1e-153, om1res, 0.0)
-    I1n = np.where(om1res > 1e-153, I1_noise/np.maximum(om1res,1e-153), 0.0)
-    om0 = self.omega0
-    om1 = np.ones_like(xc)
-    gr = np.zeros_like(xc)
-    if P0 is None:
-      P0 = self.I0#/om0
-    P1 = I1_seed#om1_seed
 
     # Cell volumes 
     dr = np.abs(np.diff(x))
@@ -692,6 +680,22 @@ class srs_forest(laser_forest):
     elif geometry == 'spherical':
       V = np.array([4/3*np.pi*(x[i]**3-x[i+1]**3) for i in range(points-1)])
       drV = dr/V
+    
+    # Initialise cell arrays and seed powers
+    I0 = np.zeros_like(x)
+    I1 = np.zeros_like(x)
+    om1res = np.where(om1res > 1e-153, om1res, 0.0)
+    om0 = self.omega0
+    om1 = np.ones_like(xc)
+    gr = np.zeros_like(xc)
+    if P0 is None:
+      P0 = self.I0
+    if I1_noise < 0.0:
+      P1 = P0/1000
+    else:
+      P1 = I1_noise/drV
+    print(P0,P1)
+    I1n = np.where(om1res > 1e-153, P1*drV/np.maximum(om1res,1e-153), 0.0)
 
     # Laser ray class
     class lray:
@@ -710,8 +714,9 @@ class srs_forest(laser_forest):
     # Ray trace with SRS modelling
     print('starting ray tracing')
     conv = 2; niter = 0; ra_frac = 0.3
-    while conv > 1 and niter < 100:
+    while conv > 1 and niter < 10:
       # Initialisation
+      nnzero = 0
       I0old = copy.deepcopy(I0)
       I1old = copy.deepcopy(I1)
       I0[:] = 0.0
@@ -720,6 +725,7 @@ class srs_forest(laser_forest):
       # Add Raman Seed ray to list
       rrays = []
       if seed:
+        print('seeded')
         forest = self.__raman_mode__(n[cells-1],om1_seed,Te[cells-1])
         rrays.append(rray(cells-1,P1,-1,forest))
       
@@ -767,7 +773,7 @@ class srs_forest(laser_forest):
         l.cid += l.dire
 
       # Update exit value
-      I0[-1] += l.pwr*drV[-1]/self.omega0
+      #I0[-1] += l.pwr*drV[-1]/self.omega0
 
       # Push all raman rays out of domain
       for r in rrays:
@@ -806,7 +812,10 @@ class srs_forest(laser_forest):
 
       # Update cell arrays for next iteration
       for i in range(cells):
+        if I0[i] > 1e-153:
+          nnzero += 1
         if I1[i] > 1e-153:
+          nnzero += 1
           om1[i] /= I1[i]
           gr[i] = self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i])
           I1[i] /= om1[i]
@@ -816,7 +825,13 @@ class srs_forest(laser_forest):
           I1[i] = 0.0
 
       # Calculate convergence condition
-      conv = np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old[:-1]-I1[:-1]))
+      #plt.plot(x,I0)
+      #plt.plot(x,I0old)
+      #plt.show()
+      #plt.plot(x,I1)
+      #plt.plot(x,I1old)
+      #plt.show()
+      conv = (np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old-I1)))/nnzero
       niter += 1
       print(f'Iteration: {niter}; Convergence: {conv}')
 
