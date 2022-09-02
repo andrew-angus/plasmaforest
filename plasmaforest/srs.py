@@ -1097,15 +1097,12 @@ class srs_forest(laser_forest):
   def wave_mixing_solve_gen(self,x:np.ndarray,n:np.ndarray,Te:np.ndarray, \
       Ti:Optional[np.ndarray]=None,I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \
       om1_seed:Optional[float]=None, P0:Optional[float]=None,\
-      plots:Optional[bool]=False,pump_depletion:Optional[bool]=True, \
+      plots:Optional[bool]=False, \
       absorption:Optional[bool]=False,geometry:Optional[str]='planar'):
 
     # Check SDL flag true
     if not self.sdl:
       raise Exception('Non-SDL wave-mixing solve not implemented.')
-
-    # Establish density profile
-    x,n = den_profile(xrange,nrange,ntype,points)
 
     # Resonance solve for each density point
     if absorption:
@@ -1134,6 +1131,7 @@ class srs_forest(laser_forest):
 
     # Initialise kappa1 arrays
     if absorption:
+      kappa0f = PchipInterpolator(x,kappa0)
       k1 = self.emw_dispersion(om1,target='k')
       vg1 = self.emw_group_velocity(om1,k1)
       kappa1 = self.emw_damping_opt(om1,logfac,nufac)/vg1
@@ -1142,10 +1140,29 @@ class srs_forest(laser_forest):
       print(kappa1)
       kappa1f = PchipInterpolator(x,kappa1)
 
+    # Geometry dependent surface areas
+    if geometry == 'planar':
+      SA = 1.0
+    elif geometry == 'cylindrical':
+      SA = 2*np.pi*x
+    elif geometry == 'spherical':
+      SA = 4*np.pi*x**2
+
     # Initialise intensity arrays
+    xc = np.array([(x[i]+x[i+1])/2 for i in range(cells)])
+    dx = np.diff(x)
+    dire = np.sign(dx)[0]
     om0 = self.omega0
-    I0 = np.ones_like(x)*self.I0
-    I1 = np.ones_like(x)*(I1_seed)
+    if P0 is None:
+      P0 = self.I0*SA
+    if I1_noise < 0.0:
+      P1 = P0/1000
+    else:
+      P1 = I1_noise*SA
+    I0 = np.ones_like(x)*P0/SA
+    I1 = np.ones_like(x)*I1_seed
+    I1n = P1/SA
+    I1nf = PchipInterpolator(x,I1n)
     I0bc = I0[0]; I1bc = I1[-1]
 
     # ODE evolution functions
@@ -1157,11 +1174,11 @@ class srs_forest(laser_forest):
       om1res = om1resf(xi)
       gr0 = grresf(xi)
       gri = grf(xi)
-      kappa1 = kappa1f(xi)
+      I1ni = I1nf(xi)
 
       # SRS
-      f1 = -I0i*(gri/om1m*I1i+gr0/om1res*I1_noise)
-      f2 = -I0i/om0*(gri*I1i+grresf(xi)*I1_noise)
+      f1 = -dire*I0i*(gri/om1m*I1i+gr0/om1res*I1ni)
+      f2 = -dire*I0i/om0*(gri*I1i+grresf(xi)*I1ni)
 
       # Geometry modification of intensity
       if geometry == 'planar':
@@ -1175,8 +1192,10 @@ class srs_forest(laser_forest):
 
       # Absorption
       if absorption:
-        f1 += -I0i*2*kappa0
-        f2 += I1i*2*kappa1
+        kappa0 = kappa0f(xi)
+        kappa1 = kappa1f(xi)
+        f1 += -dire*I0i*2*kappa0
+        f2 += dire*I1i*2*kappa1
 
       return np.vstack((f1,f2))
 
@@ -1185,12 +1204,12 @@ class srs_forest(laser_forest):
       return np.array([ya[0]-I0bc,yb[1]-I1bc])
 
     # Iteratively solve BVP and update frequencies
-    conv = I1_noise
-    while (conv > I1_noise/1000):
+    conv = 2*om0
+    while (conv > om0):
 
       # Initialisation
-      I0old = I0[-1]
-      I1old = I1[0]
+      I0old = copy.deepcopy(I0)
+      I1old = copy.deepcopy(I1)
 
       # Solve BVP
       y = np.vstack((I0,I1))
@@ -1209,7 +1228,7 @@ class srs_forest(laser_forest):
       dI1[-1] = I1_seed
       dI1[:-1] = np.maximum(0.0,dI1[:-1]-noisecont-abscont)
       for i in range(len(x)):
-        if I1[i] > 100:
+        if I1[i] > 1:
           om1[i] = (np.sum(noisecont[i:]*om1res[1+i:]) \
               +np.sum(dI1[i:]*om1[i:]))/I1[i]
         else:
@@ -1223,11 +1242,29 @@ class srs_forest(laser_forest):
         kappa1 = self.emw_damping_opt(om1,logfac,nufac)/vg1
         kappa1 = np.sum(self.emw_damping_opt(om1,logfac,nufac),axis=0)
         kappa1f = PchipInterpolator(x,kappa1)
-      conv = np.abs(I0[-1]-I0old)+np.abs(I1[0]-I1old)
+      nI = np.count_nonzero(I0 > 1)+np.count_nonzero(I1 > 1)
+      conv = np.sum(np.abs(I0-I0old)+np.abs(I1-I1old))/nI
       print(f'Convergence: {conv:0.2e}')
 
     if plots:
       self.__srs_plots__(x,n,gr,I0,I1)
+
+    return x,n,I0,I1,gr
+  
+  def wave_mixing_solve_test(self,I1_noise:float,xrange:tuple, \
+      nrange:tuple,ntype:str,points=101,plots=False,pump_depletion=True,\
+      I1_seed:Optional[float]=0.0,om1_seed:Optional[float]=None):
+
+    # Establish density profile
+    x,n = den_profile(xrange,nrange,ntype,points)
+
+    # Other inputs
+    Te = np.ones_like(n)*self.Te
+    Ti = np.ones_like(n)*self.Ti
+
+    x,n,I0,I1,gr = wave_mixing_solve_gen(x=x,n=n,Te=Te,Ti=Ti,I1_noise=I1_noise,\
+        I1_seed=I1_seed,om1_seed=om1_seed,P0=None,plots=plots, \
+        absorption=False,geometry='planar')
 
     return x,n,I0,I1,gr
 
