@@ -694,7 +694,6 @@ class srs_forest(laser_forest):
       P1 = P0/1000
     else:
       P1 = I1_noise/drV
-    print(P0,P1)
     I1n = np.where(om1res > 1e-153, P1*drV/np.maximum(om1res,1e-153), 0.0)
 
     # Laser ray class
@@ -1088,6 +1087,144 @@ class srs_forest(laser_forest):
       res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
       I0 *= self.omega0
       I1 = res.sol(x)[0]
+
+    if plots:
+      self.__srs_plots__(x,n,gr,I0,I1)
+
+    return x,n,I0,I1,gr
+
+  # Extension of BVP solver to include wave mixing from noise sources
+  def wave_mixing_solve_gen(self,x:np.ndarray,n:np.ndarray,Te:np.ndarray, \
+      Ti:Optional[np.ndarray]=None,I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \
+      om1_seed:Optional[float]=None, P0:Optional[float]=None,\
+      plots:Optional[bool]=False,pump_depletion:Optional[bool]=True, \
+      absorption:Optional[bool]=False,geometry:Optional[str]='planar'):
+
+    # Check SDL flag true
+    if not self.sdl:
+      raise Exception('Non-SDL wave-mixing solve not implemented.')
+
+    # Establish density profile
+    x,n = den_profile(xrange,nrange,ntype,points)
+
+    # Resonance solve for each density point
+    if absorption:
+      grres, om1res, ompe, k0, kappa0, logfac, nufac = \
+          self.__resonance_range__(n,absorption,Te,Ti)
+    else:
+      grres, om1res, ompe, k0 = self.__resonance_range__(n,absorption,Te)
+    grresf = PchipInterpolator(x,grres)
+    om1resf = PchipInterpolator(x,om1res)
+
+    # Check om1_seed input
+    if om1_seed is None:
+      om1_seed = om1res[-1]
+      om1 = copy.deepcopy(om1res)
+      om1f = PchipInterpolator(x,om1)
+      I1_seed = 0.0
+      gr = np.zeros_like(x)
+      grf = PchipInterpolator(x,gr)
+    elif om1_seed <= 0.0:
+      raise Exception('Seed Raman frequency must be positive')
+    else:
+      gr = np.array([self.__gain__(n[i],om1_seed,ompe[i],k0[i],Te[i]) for i in range(len(x))])
+      grf = PchipInterpolator(x,gr)
+      om1 = np.ones_like(x)*om1_seed
+      om1f = PchipInterpolator(x,om1)
+
+    # Initialise kappa1 arrays
+    if absorption:
+      k1 = self.emw_dispersion(om1,target='k')
+      vg1 = self.emw_group_velocity(om1,k1)
+      kappa1 = self.emw_damping_opt(om1,logfac,nufac)/vg1
+      print(kappa1)
+      kappa1 = np.sum(self.emw_damping_opt(om1,logfac,nufac),axis=0)
+      print(kappa1)
+      kappa1f = PchipInterpolator(x,kappa1)
+
+    # Initialise intensity arrays
+    om0 = self.omega0
+    I0 = np.ones_like(x)*self.I0
+    I1 = np.ones_like(x)*(I1_seed)
+    I0bc = I0[0]; I1bc = I1[-1]
+
+    # ODE evolution functions
+    def Fsrs(xi,Ii):
+
+      # Get interpolated quantities
+      I0i, I1i = Ii
+      om1m = om1f(xi)
+      om1res = om1resf(xi)
+      gr0 = grresf(xi)
+      gri = grf(xi)
+      kappa1 = kappa1f(xi)
+
+      # SRS
+      f1 = -I0i*(gri/om1m*I1i+gr0/om1res*I1_noise)
+      f2 = -I0i/om0*(gri*I1i+grresf(xi)*I1_noise)
+
+      # Geometry modification of intensity
+      if geometry == 'planar':
+        dIdr = 0.0
+      elif geometry == 'cylindrical':
+        dIdr = -1/xi
+      elif geometry == 'spherical':
+        dIdr = -2/xi
+      f1 += I0i*dIdr
+      f2 += I1i*dIdr
+
+      # Absorption
+      if absorption:
+        f1 += -I0i*2*kappa0
+        f2 += I1i*2*kappa1
+
+      return np.vstack((f1,f2))
+
+    # Boundary conditions
+    def bc(ya,yb):
+      return np.array([ya[0]-I0bc,yb[1]-I1bc])
+
+    # Iteratively solve BVP and update frequencies
+    conv = I1_noise
+    while (conv > I1_noise/1000):
+
+      # Initialisation
+      I0old = I0[-1]
+      I1old = I1[0]
+
+      # Solve BVP
+      y = np.vstack((I0,I1))
+      res = solve_bvp(Fsrs,bc,x,y)
+      I0 = res.sol(x)[0]
+      I1 = res.sol(x)[1]
+
+      # Separate out contributions
+      noisecont = grresf(x[1:])*I1_noise*I0[1:]/om0*np.diff(x)
+      if absorption:
+        abscont = -I1[1:]*2*kappa1[1:]*np.diff(x)
+      else:
+        abscont = 0.0
+      dI1 = np.zeros_like(I1)
+      dI1[:-1] = I1[:-1] - I1[1:]
+      dI1[-1] = I1_seed
+      dI1[:-1] = np.maximum(0.0,dI1[:-1]-noisecont-abscont)
+      for i in range(len(x)):
+        if I1[i] > 100:
+          om1[i] = (np.sum(noisecont[i:]*om1res[1+i:]) \
+              +np.sum(dI1[i:]*om1[i:]))/I1[i]
+        else:
+          om1[i] = om1res[i]
+      om1mf = PchipInterpolator(x,om1)
+      gr = np.array([self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i]) for i in range(len(x))])
+      grf = PchipInterpolator(x,gr)
+      if absorption:
+        k1 = self.emw_dispersion(om1,target='k')
+        vg1 = self.emw_group_velocity(om1,k1)
+        kappa1 = self.emw_damping_opt(om1,logfac,nufac)/vg1
+        kappa1 = np.sum(self.emw_damping_opt(om1,logfac,nufac),axis=0)
+        kappa1f = PchipInterpolator(x,kappa1)
+      conv = np.abs(I0[-1]-I0old)+np.abs(I1[0]-I1old)
+      print(f'Convergence: {conv:0.2e}')
 
     if plots:
       self.__srs_plots__(x,n,gr,I0,I1)
