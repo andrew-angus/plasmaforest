@@ -4,7 +4,7 @@ from .core import *
 from .laser import *
 from .wave import *
 from scipy.optimize import bisect,minimize,minimize_scalar,Bounds
-from scipy.interpolate import PchipInterpolator
+from scipy.interpolate import PchipInterpolator, interp1d
 from scipy.integrate import solve_bvp
 import matplotlib.pyplot as plt
 import copy
@@ -691,10 +691,10 @@ class srs_forest(laser_forest):
     if P0 is None:
       P0 = self.I0
     if I1_noise < 0.0:
-      P1 = P0/1000
+      P1n = P0/1000
     else:
-      P1 = I1_noise/drV
-    I1n = np.where(om1res > 1e-153, P1*drV/np.maximum(om1res,1e-153), 0.0)
+      P1n = I1_noise/drV
+    I1n = np.where(om1res > 1e-153, P1n*drV/np.maximum(om1res,1e-153), 0.0)
 
     # Laser ray class
     class lray:
@@ -713,7 +713,7 @@ class srs_forest(laser_forest):
     # Ray trace with SRS modelling
     print('starting ray tracing')
     conv = 2; niter = 0; ra_frac = 0.3
-    while conv > 1 and niter < 10:
+    while conv > 0.1 and niter < 10:
       # Initialisation
       nnzero = 0
       I0old = copy.deepcopy(I0)
@@ -724,9 +724,8 @@ class srs_forest(laser_forest):
       # Add Raman Seed ray to list
       rrays = []
       if seed:
-        print('seeded')
         forest = self.__raman_mode__(n[cells-1],om1_seed,Te[cells-1])
-        rrays.append(rray(cells-1,P1,-1,forest))
+        rrays.append(rray(cells-1,I1_seed/drV[-1],-1,forest))
       
       # Launch laser ray
       l = lray(0,P0,1)
@@ -1142,13 +1141,15 @@ class srs_forest(laser_forest):
 
     # Geometry dependent surface areas
     if geometry == 'planar':
-      SA = 1.0
+      SA = np.ones_like(x)
     elif geometry == 'cylindrical':
       SA = 2*np.pi*x
     elif geometry == 'spherical':
       SA = 4*np.pi*x**2
 
     # Initialise intensity arrays
+    points = len(x)
+    cells = points-1
     xc = np.array([(x[i]+x[i+1])/2 for i in range(cells)])
     dx = np.diff(x)
     dire = np.sign(dx)[0]
@@ -1163,6 +1164,7 @@ class srs_forest(laser_forest):
     I1 = np.ones_like(x)*I1_seed
     I1n = P1/SA
     I1nf = PchipInterpolator(x,I1n)
+    #I1nf = interp1d(x,I1n)
     I0bc = I0[0]; I1bc = I1[-1]
 
     # ODE evolution functions
@@ -1204,8 +1206,8 @@ class srs_forest(laser_forest):
       return np.array([ya[0]-I0bc,yb[1]-I1bc])
 
     # Iteratively solve BVP and update frequencies
-    conv = 2*om0
-    while (conv > om0):
+    conv = 2*om0; niter = 1
+    while (conv > om0/1000 and niter < 11):
 
       # Initialisation
       I0old = copy.deepcopy(I0)
@@ -1220,7 +1222,7 @@ class srs_forest(laser_forest):
       # Separate out contributions
       noisecont = grresf(x[1:])*I1_noise*I0[1:]/om0*np.diff(x)
       if absorption:
-        abscont = -I1[1:]*2*kappa1[1:]*np.diff(x)
+        abscont = -dire*I1[1:]*2*kappa1[1:]*np.diff(x)
       else:
         abscont = 0.0
       dI1 = np.zeros_like(I1)
@@ -1244,6 +1246,7 @@ class srs_forest(laser_forest):
         kappa1f = PchipInterpolator(x,kappa1)
       nI = np.count_nonzero(I0 > 1)+np.count_nonzero(I1 > 1)
       conv = np.sum(np.abs(I0-I0old)+np.abs(I1-I1old))/nI
+      niter += 1
       print(f'Convergence: {conv:0.2e}')
 
     if plots:
@@ -1262,7 +1265,7 @@ class srs_forest(laser_forest):
     Te = np.ones_like(n)*self.Te
     Ti = np.ones_like(n)*self.Ti
 
-    x,n,I0,I1,gr = wave_mixing_solve_gen(x=x,n=n,Te=Te,Ti=Ti,I1_noise=I1_noise,\
+    x,n,I0,I1,gr = self.wave_mixing_solve_gen(x=x,n=n,Te=Te,Ti=Ti,I1_noise=I1_noise,\
         I1_seed=I1_seed,om1_seed=om1_seed,P0=None,plots=plots, \
         absorption=False,geometry='planar')
 
