@@ -1096,12 +1096,46 @@ class srs_forest(laser_forest):
   def wave_mixing_solve_gen(self,x:np.ndarray,n:np.ndarray,Te:np.ndarray, \
       Ti:Optional[np.ndarray]=None,I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \
       om1_seed:Optional[float]=None, P0:Optional[float]=None,\
-      plots:Optional[bool]=False, \
-      absorption:Optional[bool]=False,geometry:Optional[str]='planar'):
+      plots:Optional[bool]=False,absorption:Optional[bool]=False,\
+      geometry:Optional[str]='planar',laser='lhs'):
 
     # Check SDL flag true
     if not self.sdl:
       raise Exception('Non-SDL wave-mixing solve not implemented.')
+
+    # Ensure all input arrays same length, extrapolate if not
+    points = len(x)
+    cells = points-1
+    xc = np.array([(x[i]+x[i+1])/2 for i in range(cells)])
+    if len(n) == cells:
+      #n0 = n[0]
+      #n1 = n[-1]
+      nf = PchipInterpolator(xc,n)
+      #n = np.zeros_like(x)
+      #n[1:-1] = nf(x[1:-1])
+      n = nf(x[1:-1])
+      #n[0] = n0
+      #n[-1] = n1
+      #T0 = Te[0]
+      #T1 = Te[-1]
+      Tef = PchipInterpolator(xc,Te)
+      #Te = np.zeros_like(x)
+      #Te[1:-1] = Tef(x[1:-1])
+      Te = Tef(x[1:-1])
+      #Te[0] = T0
+      #Te[-1] = T1
+      if Ti is not None:
+        #T0 = Ti[0]
+        #T1 = Ti[0]
+        Tif = PchipInterpolator(xc,Ti)
+        #Ti = np.zeros_like(x)
+        #Ti[1:-1] = Tif(x[1:-1])
+        Ti = Tif(x[1:-1])
+        #Ti[0] = T0
+        #Ti[-1] = T1
+      x = x[1:-1]
+      points = len(x)
+      cells = points - 1
 
     # Resonance solve for each density point
     if absorption:
@@ -1133,10 +1167,8 @@ class srs_forest(laser_forest):
       kappa0f = PchipInterpolator(x,kappa0)
       k1 = self.emw_dispersion(om1,target='k')
       vg1 = self.emw_group_velocity(om1,k1)
-      kappa1 = self.emw_damping_opt(om1,logfac,nufac)/vg1
-      print(kappa1)
-      kappa1 = np.sum(self.emw_damping_opt(om1,logfac,nufac),axis=0)
-      print(kappa1)
+      kappa1 = np.where(np.isnan(vg1),0.0,self.emw_damping_opt(om1,logfac,nufac)/vg1)
+      kappa1 = np.sum(kappa1,axis=0)
       kappa1f = PchipInterpolator(x,kappa1)
 
     # Geometry dependent surface areas
@@ -1148,12 +1180,7 @@ class srs_forest(laser_forest):
       SA = 4*np.pi*x**2
 
     # Initialise intensity arrays
-    points = len(x)
-    cells = points-1
-    xc = np.array([(x[i]+x[i+1])/2 for i in range(cells)])
     dx = np.diff(x)
-    dire = np.sign(dx)[0]
-    om0 = self.omega0
     if P0 is None:
       P0 = self.I0*SA
     if I1_noise < 0.0:
@@ -1164,13 +1191,25 @@ class srs_forest(laser_forest):
     I1 = np.ones_like(x)*I1_seed
     I1n = P1/SA
     I1nf = PchipInterpolator(x,I1n)
-    #I1nf = interp1d(x,I1n)
-    I0bc = I0[0]; I1bc = I1[-1]
+    #I1nf = PchipInterpolator1d(x,I1n)
+    if laser == 'lhs':
+      dire = 1
+      crng = np.arange(1,len(x))
+      I0bc = I0[0]; I1bc = I1[-1]
+      def bc(ya,yb):
+        return np.array([ya[0]-I0bc,yb[1]-I1bc])
+    else:
+      dire = -1
+      crng = np.arange(len(x)-1)
+      I0bc = I0[-1]; I1bc = I1[0]
+      def bc(ya,yb):
+        return np.array([yb[0]-I0bc,ya[1]-I1bc])
+    om0 = self.omega0
 
     # ODE evolution functions
     def Fsrs(xi,Ii):
 
-      # Get interpolated quantities
+      # Get PchipInterpolatorolated quantities
       I0i, I1i = Ii
       om1m = om1f(xi)
       om1res = om1resf(xi)
@@ -1184,7 +1223,7 @@ class srs_forest(laser_forest):
 
       # Geometry modification of intensity
       if geometry == 'planar':
-        dIdr = 0.0
+        dIdr = np.zeros_like(xi)
       elif geometry == 'cylindrical':
         dIdr = -1/xi
       elif geometry == 'spherical':
@@ -1201,13 +1240,10 @@ class srs_forest(laser_forest):
 
       return np.vstack((f1,f2))
 
-    # Boundary conditions
-    def bc(ya,yb):
-      return np.array([ya[0]-I0bc,yb[1]-I1bc])
 
     # Iteratively solve BVP and update frequencies
     conv = 2*om0; niter = 1
-    while (conv > om0/1000 and niter < 11):
+    while (conv > om0/100 and niter < 11):
 
       # Initialisation
       I0old = copy.deepcopy(I0)
@@ -1218,31 +1254,52 @@ class srs_forest(laser_forest):
       res = solve_bvp(Fsrs,bc,x,y)
       I0 = res.sol(x)[0]
       I1 = res.sol(x)[1]
+      I0 = np.where(np.isnan(I0),0.0,I0)
+      I1 = np.where(I1 < 0.0,0.0,I1)
 
       # Separate out contributions
-      noisecont = grresf(x[1:])*I1_noise*I0[1:]/om0*np.diff(x)
+      noisecont = grresf(x[crng])*I1n[crng]*I0[crng]/om0*np.diff(x)
       if absorption:
-        abscont = -dire*I1[1:]*2*kappa1[1:]*np.diff(x)
+        abscont = -I1[crng]*2*kappa1[crng]*np.diff(x)
       else:
         abscont = 0.0
+      if geometry == 'planar':
+        dIdr = np.zeros_like(x)
+      elif geometry == 'cylindrical':
+        dIdr = -1/x
+      elif geometry == 'spherical':
+        dIdr = -2/x
+      coordcont = I0[crng]*dIdr[crng]*np.diff(x)
       dI1 = np.zeros_like(I1)
-      dI1[:-1] = I1[:-1] - I1[1:]
-      dI1[-1] = I1_seed
-      dI1[:-1] = np.maximum(0.0,dI1[:-1]-noisecont-abscont)
-      for i in range(len(x)):
-        if I1[i] > 1:
-          om1[i] = (np.sum(noisecont[i:]*om1res[1+i:]) \
-              +np.sum(dI1[i:]*om1[i:]))/I1[i]
-        else:
-          om1[i] = om1res[i]
+      dI1 = I1[crng-dire] - I1[crng]
+      dI1 = np.maximum(0.0,dI1-noisecont-abscont-coordcont)
+      if laser == 'lhs':
+        om1[-1] = om1_seed
+        for i in range(points-1):
+          if I1[i] > 1e-153:
+            om1[i] = (np.sum(noisecont[i:]*om1res[1+i:]) \
+                +np.sum(dI1[i:]*om1[1+i:]))/np.sum(noisecont[i:]+dI1[i:])
+            gr[i] = self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i])
+          else:
+            om1[i] = 0.0
+            gr[i] = 0.0
+      else:
+        om1[0] = om1_seed
+        for i in range(points-1,0,-1):
+          if I1[i] > 1e-153:
+            om1[i] = (np.sum(noisecont[:i]*om1res[:i]) \
+                +np.sum(dI1[:i]*om1[:i]))/np.sum(noisecont[:i]+dI1[:i])
+            gr[i] = self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i])
+          else:
+            om1[i] = om1res[i]
+            gr[i] = 0.0
       om1mf = PchipInterpolator(x,om1)
-      gr = np.array([self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i]) for i in range(len(x))])
       grf = PchipInterpolator(x,gr)
       if absorption:
         k1 = self.emw_dispersion(om1,target='k')
         vg1 = self.emw_group_velocity(om1,k1)
-        kappa1 = self.emw_damping_opt(om1,logfac,nufac)/vg1
-        kappa1 = np.sum(self.emw_damping_opt(om1,logfac,nufac),axis=0)
+        kappa1 = np.where(np.isnan(vg1),0.0,self.emw_damping_opt(om1,logfac,nufac)/vg1)
+        kappa1 = np.sum(kappa1,axis=0)
         kappa1f = PchipInterpolator(x,kappa1)
       nI = np.count_nonzero(I0 > 1)+np.count_nonzero(I1 > 1)
       conv = np.sum(np.abs(I0-I0old)+np.abs(I1-I1old))/nI
