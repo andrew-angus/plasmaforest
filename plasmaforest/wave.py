@@ -344,7 +344,7 @@ class wave_forest(forest):
 
     # Integrator
     res = solve_ivp(zeta_ode,(self.K0,Kf),np.array([self.zeta0])\
-        ,method='RK45',atol=1e-10,rtol=1e-10)
+        ,method='DOP853',atol=1e-10,rtol=1e-10)
     zeta = res.y[-1,-1]
     K = np.real(np.sqrt(dZfun(zeta)))
     omega = zeta*self.ompe*Kf
@@ -353,41 +353,6 @@ class wave_forest(forest):
     return zeta
 
   # Get undamped mode by searching for zero of real permittivity for real argument
-  def undamped_dispersion_failed(self,k:float) -> float:
-    if self.dbye is None:
-      self.get_dbyl()
-    if self.vthe is None:
-      self.get_vth(species='e')
-
-    # Get zero of real permittivity by minimisation
-    K = k*self.dbye
-    omega = self.zetar_int(K,refine=False)*self.vthe*k
-
-    return omega
-
-  # Integrate real zeta ODE till desired K value
-  def zetar_int(self,Kf:float,refine:Optional[bool]=True) -> complex:
-    # ODE driver
-    def zetar_ode(K,zeta):
-      Zr = np.real(Zfun(zeta))
-      return np.array([4*K/(-2*Zr+4*zeta+4*zeta*Zr)])
-
-    # Integrator
-    K0 = 0.1630896799156106
-    zeta0 = 4.5154157506680495
-    res = solve_ivp(zetar_ode,(K0,Kf),np.array([zeta0]))
-    zeta = res.y[-1,-1]
-    
-    # Optionally refine result
-    def reps(K):
-      return 2*sqr(K)-np.real(dZfun(zeta))
-    if refine:
-      K = newton(reps,Kf)
-      res = solve_ivp(zetar_ode,(K,Kf),np.array([zeta]))
-      zeta = res.y[-1,-1]
-
-    return zeta
-
   def undamped_dispersion(self,k:float) -> float:
     if self.dbye is None:
       self.get_dbyl()

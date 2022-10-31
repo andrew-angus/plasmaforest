@@ -152,19 +152,23 @@ class srs_forest(laser_forest):
           self.omega2 = self.relativistic_dispersion(self.k2) # Undamped relativistic mode
           self.get_ldamping2()
         else:
-          ubnd = self.omega0-np.real(self.epw_kinetic_dispersion(self.k0,target='omega'))
-          if lbnd < ubnd:
-            if undamped:
+          if undamped:
+            ubnd = self.omega0-self.undamped_dispersion(self.k0)
+            if lbnd < ubnd:
               self.k2 = bisect(self.__bsrs_kinu__,self.k0,2*self.k0)
               self.omega2 = self.undamped_dispersion(self.k2) # Undamped mode
               self.get_ldamping2()
             else:
+              failed = True
+          else:
+            ubnd = self.omega0-np.real(self.epw_kinetic_dispersion(self.k0,target='omega'))
+            if lbnd < ubnd:
               self.k2 = bisect(self.__bsrs_kin__,self.k0,2*self.k0)
               omega2 = self.epw_kinetic_dispersion(self.k2,target='omega')
               self.ldamping2 = -np.imag(omega2)
               self.omega2 = np.real(omega2)
-          else:
-            failed = True
+            else:
+              failed = True
 
     # Lastly set raman quantities by matching conditions
     if failed:
@@ -208,14 +212,16 @@ class srs_forest(laser_forest):
       self.get_gain_coeff()
       return -self.gain_coeff
 
-    lbnd = self.ompe
     failed = False
     if self.ne > 0.25*self.nc0:
       failed = True
     else:
       if self.mode == 'kinetic':
+        lbnd = np.maximum(self.ompe,\
+            self.omega0-np.real(self.epw_kinetic_dispersion(2*self.k0,target='omega')))
         ubnd = self.omega0-np.real(self.epw_kinetic_dispersion(self.k0,target='omega'))
       else:
+        lbnd = self.omega0-self.bohm_gross(2*self.k0,target='omega')
         ubnd = self.omega0-self.bohm_gross(self.k0,target='omega')
       failed = False
       if ubnd-1 < lbnd+1:
@@ -226,7 +232,14 @@ class srs_forest(laser_forest):
         om2 = self.bohm_gross(k2,target='omega')
         om1 = np.minimum(np.maximum(self.omega0 - om2,lbnd+1),ubnd-1)
         bnds = Bounds(lb=lbnd+1,ub=ubnd-1)
-        res = minimize(obj_fun,om1,tol=1e-14,bounds=bnds,method='Nelder-Mead')
+        self.get_gain_coeff()
+        #print(self.gain_coeff)
+        #print((ubnd-1)/self.omega0)
+        #print((lbnd+1)/self.omega0)
+        res = minimize(obj_fun,om1,tol=1e-14,bounds=bnds,method='TNC')
+        #print(res.message)
+        #print(res.x,om1,res.status)
+        #print(-res.fun)
 
     if failed:
       self.srs = False
@@ -836,6 +849,7 @@ class srs_forest(laser_forest):
     for i in range(cells):
       if n[i] < self.nc0:
         print(n[i]/self.nc0)
+        print(Te[i])
         print(I0[i])
         print(I1[i])
         print(om1[i],om1res[i])
