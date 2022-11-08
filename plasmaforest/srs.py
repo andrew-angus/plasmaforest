@@ -300,9 +300,9 @@ class srs_forest(laser_forest):
     if self.omega2 is None:
       self.resonance_solve()
     else:
-      if relativistic:
+      if self.relativistic:
         raise Exception('get_k2 method not implemented for relativistic dispersion')
-      if mode == 'kinetic':
+      if self.mode == 'kinetic':
         self.k2 = self.epw_kinetic_dispersion(self.omega2,target='k')
       else:
         self.k2 = self.bohm_gross(self.omega2,target='k')
