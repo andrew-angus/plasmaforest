@@ -371,6 +371,8 @@ class wave_forest(forest):
       return fac-np.real(dZfun(zeta))
 
     # Get zero of real permittivity by root-finding (or minimisation if failed)
+    # Can be improved, try and frame as ODE problem like damped dispersion
+    # Possiby take plasma frequency - k=0 pair as known solution?
     K = k*self.dbye
     omega0 = self.bohm_gross(k,target='omega')
     zeta0 = omega0/(k*self.vthe)
@@ -379,6 +381,8 @@ class wave_forest(forest):
       res = newton(reps,np.array([zeta0]),tol=100*np.finfo(np.float64).eps)
       omega = res[0]*k*self.vthe
     except:
+      print('warning: undamped dispersion solve falling back', \
+          'to analytical permittivity approximation')
       res = minimize(repsana,np.array([omega0]),tol=np.finfo(np.float64).eps)
       omega = res.x[0]
 
