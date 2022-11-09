@@ -263,8 +263,12 @@ class srs_forest(laser_forest):
     if self.omega2 is None or self.k2 is None:
       self.resonance_solve()
     if self.mode == 'fluid' and force_kinetic:
-      omega = self.epw_kinetic_dispersion(self.k2,target='omega')
-      self.ldamping2 = -np.imag(omega)
+      if self.relativistic:
+        omega = self.relativistic_dispersion(self.k2)
+        self.ldamping2 = self.epw_landau_damping(np.real(omega),self.k2,'kinetic',self.relativistic)
+      else:
+        omega = self.epw_kinetic_dispersion(self.k2,target='omega')
+        self.ldamping2 = -np.imag(omega)
     else:
       self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,self.mode,self.relativistic)
 
