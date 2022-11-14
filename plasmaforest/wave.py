@@ -344,16 +344,14 @@ class wave_forest(forest):
 
     # Integrator
     res = solve_ivp(zeta_ode,(self.K0,Kf),np.array([self.zeta0])\
-        ,method='DOP853',atol=1e-10,rtol=1e-10)
+                   ,method='DOP853',atol=100*np.finfo(np.float64).eps
+                   ,rtol=100*np.finfo(np.float64).eps)
     zeta = res.y[-1,-1]
-    K = np.real(np.sqrt(dZfun(zeta)))
-    omega = zeta*self.ompe*Kf
-    k = Kf*self.ompe/self.vthe
 
     return zeta
 
   # Get undamped mode by searching for zero of real permittivity for real argument
-  def undamped_dispersion(self,k:float) -> float:
+  def undamped_dispersion(self,arg:floats,target:str) -> float:
     if self.dbye is None:
       self.get_dbyl()
     if self.ompe is None:
@@ -361,32 +359,47 @@ class wave_forest(forest):
     if self.vthe is None:
       self.get_vth(species='e')
 
-    def repsana(omega):
-      omrat = self.ompe/omega[0]
-      return np.abs(1-sqr(omrat)*(1+3*sqr(omrat*K)+15*pwr(omrat*K,4)))
-    def realeps(omega):
-      return np.abs(np.real(self.kinetic_permittivity(omega[0],k,full=False)))
-    def reps(zeta):
-      #return np.real(self.kinetic_permittivity(omega[0],k,full=False))
-      return fac-np.real(dZfun(zeta))
+    therm = self.vthe/self.ompe
+    if target == 'omega':
+      om = self.bohm_gross(arg,target='omega')
+      zeta0 = om/(arg*self.vthe)
+      K0 = np.sqrt(np.real(dZfun(zeta0)))
+      Kf = arg*therm
+      zeta = self.zetar_int(zeta0,K0,Kf)
+      res = Kf*zeta*self.ompe
+    elif target == 'k':
+      # Initial guess at k from fluid dispersion  
+      kguess = self.bohm_gross(arg,target='k')
+      zeta0 = arg/(kguess*self.vthe)
+      K0 = np.sqrt(np.real(dZfun(zeta0)))
+      Kguess = kguess*therm
+      # Objective function
+      def omegar_diff(K):
+        zeta = self.zetar_int(zeta0,K0,K)
+        omegar = zeta*self.ompe*K
+        return omegar - arg
+      # Solve for K
+      res = newton(omegar_diff,Kguess,tol=np.finfo(np.float64).eps)
+      res /= therm
+    else:
+      raise Exception('Error: target must be one of k or omega')
 
-    # Get zero of real permittivity by root-finding (or minimisation if failed)
-    # Can be improved, try and frame as ODE problem like damped dispersion
-    # Possiby take plasma frequency - k=0 pair as known solution?
-    K = k*self.dbye
-    omega0 = self.bohm_gross(k,target='omega')
-    zeta0 = omega0/(k*self.vthe)
-    fac = 2*sqr(K)
-    try:
-      res = newton(reps,np.array([zeta0]),tol=100*np.finfo(np.float64).eps)
-      omega = res[0]*k*self.vthe
-    except:
-      print('warning: undamped dispersion solve falling back', \
-          'to analytical permittivity approximation')
-      res = minimize(repsana,np.array([omega0]),tol=np.finfo(np.float64).eps)
-      omega = res.x[0]
+    return res
 
-    return omega
+  # Integrate from known real zeta solution to solution at Kf 
+  def zetar_int(self,zeta0:float,K0:float,Kf:float) -> float:
+
+    # ODE driver
+    def zetar_ode(K,zeta):
+      return np.array([2*K/np.real(ddZfun(zeta))])
+
+    # Integrator
+    res = solve_ivp(zetar_ode,(K0,Kf),np.array([zeta0])\
+                   ,method='DOP853',atol=100*np.finfo(np.float64).eps
+                   ,rtol=100*np.finfo(np.float64).eps)
+    zeta = res.y[-1,-1]
+
+    return zeta
 
   # Permittivity approximation with relativistic correction
   def relativistic_permittivity(self,omega,k):

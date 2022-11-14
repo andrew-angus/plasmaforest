@@ -153,10 +153,12 @@ class srs_forest(laser_forest):
           self.get_ldamping2()
         else:
           if undamped:
-            ubnd = self.omega0-self.undamped_dispersion(self.k0)
+            #ubnd = self.omega0-self.undamped_dispersion(self.k0)
+            ubnd = self.omega0-self.undamped_dispersion(self.k0,target='omega')
             if lbnd < ubnd:
               self.k2 = bisect(self.__bsrs_kinu__,self.k0,2*self.k0)
-              self.omega2 = self.undamped_dispersion(self.k2) # Undamped mode
+              #self.omega2 = self.undamped_dispersion(self.k2) # Undamped mode
+              self.omega2 = self.undamped_dispersion(self.k2,target='omega') # Undamped mode
               self.get_ldamping2()
             else:
               failed = True
@@ -188,7 +190,8 @@ class srs_forest(laser_forest):
     omega_ek = np.real(self.epw_kinetic_dispersion(k2,target='omega')) # Natural mode
     return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
   def __bsrs_kinu__(self,k2):
-    omega_ek = self.undamped_dispersion(k2) # Undamped mode
+    #omega_ek = self.undamped_dispersion(k2) # Undamped mode
+    omega_ek = self.undamped_dispersion(k2,target='omega') # Undamped mode
     return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
   def __bsrs_kinr__(self,k2):
     omega_ek = self.relativistic_dispersion(k2) # Relativistic dispersion
@@ -305,7 +308,8 @@ class srs_forest(laser_forest):
       self.resonance_solve()
     else:
       if self.relativistic:
-        raise Exception('get_k2 method not implemented for relativistic dispersion')
+        print('Warning: get_k2 method not implemented correctly for relativistic dispersion')
+        self.k2 = self.bohm_gross(self.omega2,target='k')
       if self.mode == 'kinetic':
         self.k2 = self.epw_kinetic_dispersion(self.omega2,target='k')
       else:
