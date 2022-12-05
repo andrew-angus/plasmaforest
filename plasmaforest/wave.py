@@ -365,6 +365,9 @@ class wave_forest(forest):
       zeta0 = om/(arg*self.vthe)
       K0 = np.sqrt(np.real(dZfun(zeta0)))
       Kf = arg*therm
+      if Kf > 0.75461:
+        raise Exception(\
+          'No omega solution for given k by undamped kinetic dispersion')
       zeta = self.zetar_int(zeta0,K0,Kf)
       res = Kf*zeta*self.ompe
     elif target == 'k':
@@ -397,6 +400,7 @@ class wave_forest(forest):
     res = solve_ivp(zetar_ode,(K0,Kf),np.array([zeta0])\
                    ,method='DOP853',atol=100*np.finfo(np.float64).eps
                    ,rtol=100*np.finfo(np.float64).eps)
+
     zeta = res.y[-1,-1]
 
     return zeta

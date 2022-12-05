@@ -3,7 +3,7 @@
 from .core import *
 from .laser import *
 from .wave import *
-from scipy.optimize import bisect,minimize,minimize_scalar,Bounds
+from scipy.optimize import bisect,minimize,minimize_scalar,Bounds,brentq
 from scipy.interpolate import PchipInterpolator, interp1d
 from scipy.integrate import solve_bvp
 import matplotlib.pyplot as plt
@@ -131,6 +131,8 @@ class srs_forest(laser_forest):
       self.get_k0()
     if self.nc0 is None:
       self.get_nc0()
+    if self.vthe is None:
+      self.get_vth('e')
 
     lbnd = self.ompe
     failed = False
@@ -138,34 +140,37 @@ class srs_forest(laser_forest):
       failed = True
     else:
       if self.mode == 'fluid':
-        # Solve for EPW wavenumber and set other unknowns bisecting fluid raman dispersion
+        # Solve for EPW wavenumber and set other unknowns brentqing fluid raman dispersion
         ubnd = self.omega0-self.bohm_gross(self.k0,target='omega')
         if lbnd < ubnd:
-          self.k2 = bisect(self.__bsrs__,self.k0,2*self.k0) # Look between k0 and 2k0
+          kbnd = self.bohm_gross(self.omega0-self.ompe,target='k')
+          self.k2 = brentq(self.__bsrs__,self.k0,kbnd) # Look between k0 and 2k0
           self.omega2 = self.bohm_gross(self.k2,target='omega')
         else:
           failed = True
       elif self.mode == 'kinetic':
         # Solve similarly to above but replacing bohm-gross with linear kinetic dispersion
         if self.relativistic:
-          self.k2 = bisect(self.__bsrs_kinr__,self.k0,2*self.k0)
+          self.k2 = brentq(self.__bsrs_kinr__,self.k0,2*self.k0)
           self.omega2 = self.relativistic_dispersion(self.k2) # Undamped relativistic mode
           self.get_ldamping2()
         else:
           if undamped:
-            #ubnd = self.omega0-self.undamped_dispersion(self.k0)
-            ubnd = self.omega0-self.undamped_dispersion(self.k0,target='omega')
-            if lbnd < ubnd:
-              self.k2 = bisect(self.__bsrs_kinu__,self.k0,2*self.k0)
-              #self.omega2 = self.undamped_dispersion(self.k2) # Undamped mode
-              self.omega2 = self.undamped_dispersion(self.k2,target='omega') # Undamped mode
-              self.get_ldamping2()
+            disbnd = 0.7546*self.ompe/self.vthe
+            if self.k0 < disbnd:
+              kbnd = np.minimum(2*self.k0,disbnd)
+              try:
+                self.k2 = brentq(self.__bsrs_kinu__,self.k0,kbnd)
+                self.omega2 = self.undamped_dispersion(self.k2,target='omega') # Undamped mode
+                self.get_ldamping2()
+              except:
+                failed = True
             else:
               failed = True
           else:
             ubnd = self.omega0-np.real(self.epw_kinetic_dispersion(self.k0,target='omega'))
             if lbnd < ubnd:
-              self.k2 = bisect(self.__bsrs_kin__,self.k0,2*self.k0)
+              self.k2 = brentq(self.__bsrs_kin__,self.k0,2*self.k0)
               omega2 = self.epw_kinetic_dispersion(self.k2,target='omega')
               self.ldamping2 = -np.imag(omega2)
               self.omega2 = np.real(omega2)
@@ -174,6 +179,7 @@ class srs_forest(laser_forest):
 
     # Lastly set raman quantities by matching conditions
     if failed:
+      print('resonance solve failed; no resonant srs backscatter at given conditions')
       self.srs = False
       self.omega1 = None; self.omega2 = None
       self.k1 = None; self.k2 = None
@@ -190,7 +196,6 @@ class srs_forest(laser_forest):
     omega_ek = np.real(self.epw_kinetic_dispersion(k2,target='omega')) # Natural mode
     return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
   def __bsrs_kinu__(self,k2):
-    #omega_ek = self.undamped_dispersion(k2) # Undamped mode
     omega_ek = self.undamped_dispersion(k2,target='omega') # Undamped mode
     return self.emw_dispersion_res((self.omega0-omega_ek),(self.k0-k2))
   def __bsrs_kinr__(self,k2):
@@ -235,16 +240,10 @@ class srs_forest(laser_forest):
         om2 = self.bohm_gross(k2,target='omega')
         om1 = np.minimum(np.maximum(self.omega0 - om2,lbnd+1),ubnd-1)
         bnds = Bounds(lb=lbnd+1,ub=ubnd-1)
-        self.get_gain_coeff()
-        #print(self.gain_coeff)
-        #print((ubnd-1)/self.omega0)
-        #print((lbnd+1)/self.omega0)
         res = minimize(obj_fun,om1,tol=1e-14,bounds=bnds,method='TNC')
-        #print(res.message)
-        #print(res.x,om1,res.status)
-        #print(-res.fun)
 
     if failed:
+      print('resonance solve failed; no resonant srs backscatter at given conditions')
       self.srs = False
       self.omega1 = None; self.omega2 = None
       self.k1 = None; self.k2 = None
