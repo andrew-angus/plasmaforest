@@ -302,15 +302,18 @@ class srs_forest(laser_forest):
       self.k1 = self.emw_dispersion(self.omega1,target='k')
 
   # Get EPW wavenumber
-  def get_k2(self):
+  def get_k2(self,undamped=True):
     if self.omega2 is None:
-      self.resonance_solve()
+      self.resonance_solve(undamped)
     else:
       if self.relativistic:
         print('Warning: get_k2 method not implemented correctly for relativistic dispersion')
         self.k2 = self.bohm_gross(self.omega2,target='k')
       if self.mode == 'kinetic':
-        self.k2 = self.epw_kinetic_dispersion(self.omega2,target='k')
+        if undamped:
+          self.k2 = self.undamped_dispersion(self.omega2,target='k')
+        else:
+          self.k2 = self.epw_kinetic_dispersion(self.omega2,target='k')
       else:
         self.k2 = self.bohm_gross(self.omega2,target='k')
 
@@ -452,6 +455,36 @@ class srs_forest(laser_forest):
 
     # Rosenbluth gain coefficient
     self.rosenbluth = 2*np.pi*sqr(self.gamma0)/np.abs(self.vg1*self.vg2*dkmis)
+
+  # Do resonance solve by Kruer formula i.e. assume omega2 equals ompe
+  def kruer_resonance(self):
+    if self.k0 is None:
+      self.get_k0()
+
+    self.k1 = self.omega0/sc.c*np.sqrt(1-2*self.ompe/self.omega0)
+    self.omega2 = self.ompe
+    self.omega1 = self.omega0 - self.omega2
+    self.k2 = self.k0 + self.k1
+
+  # Print frequency residual
+  def frequency_matching(self,normalised=True):
+    try:
+      if normalised:
+        return 1.0 - (self.omega1 + self.omega2)/self.omega0
+      else:
+        return self.omega0 - self.omega1 - self.omega2
+    except:
+      print('error: not all frequency attributes specified')
+
+  # Print frequency residual
+  def wavenumber_matching(self,normalised=True):
+    try:
+      if normalised:
+        return 1.0 - (-self.k1 + self.k2)/self.k0
+      else:
+        return self.k0 + self.k1 - self.k2
+    except:
+      print('error: not all wavenumber attributes specified')
 
   # 1D BVP solve with parent forest setting resonance conditions
   def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101,\
