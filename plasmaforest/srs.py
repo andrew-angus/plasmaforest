@@ -134,19 +134,16 @@ class srs_forest(laser_forest):
     if self.vthe is None:
       self.get_vth('e')
 
-    lbnd = self.ompe
     failed = False
     if self.ne > 0.25*self.nc0:
       failed = True
     else:
       if self.mode == 'fluid':
         # Solve for EPW wavenumber and set other unknowns brentqing fluid raman dispersion
-        ubnd = self.omega0-self.bohm_gross(self.k0,target='omega')
-        if lbnd < ubnd:
-          kbnd = self.bohm_gross(self.omega0-self.ompe,target='k')
-          self.k2 = brentq(self.__bsrs__,self.k0,kbnd) # Look between k0 and 2k0
+        try:
+          self.k2 = brentq(self.__bsrs__,self.k0,2*self.k0) # Look between k0 and 2k0
           self.omega2 = self.bohm_gross(self.k2,target='omega')
-        else:
+        except:
           failed = True
       elif self.mode == 'kinetic':
         # Solve similarly to above but replacing bohm-gross with linear kinetic dispersion
@@ -169,6 +166,7 @@ class srs_forest(laser_forest):
               failed = True
           else:
             ubnd = self.omega0-np.real(self.epw_kinetic_dispersion(self.k0,target='omega'))
+            lbnd = self.ompe
             if lbnd < ubnd:
               self.k2 = brentq(self.__bsrs_kin__,self.k0,2*self.k0)
               omega2 = self.epw_kinetic_dispersion(self.k2,target='omega')
