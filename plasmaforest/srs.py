@@ -177,7 +177,8 @@ class srs_forest(laser_forest):
 
     # Lastly set raman quantities by matching conditions
     if failed:
-      print('resonance solve failed; no resonant srs backscatter at given conditions')
+      if self.verbose:
+        print('resonance solve failed; no resonant srs backscatter at given conditions')
       self.srs = False
       self.omega1 = None; self.omega2 = None
       self.k1 = None; self.k2 = None
@@ -241,7 +242,8 @@ class srs_forest(laser_forest):
         res = minimize(obj_fun,om1,tol=1e-14,bounds=bnds,method='TNC')
 
     if failed:
-      print('resonance solve failed; no resonant srs backscatter at given conditions')
+      if self.verbose:
+        print('resonance solve failed; no resonant srs backscatter at given conditions')
       self.srs = False
       self.omega1 = None; self.omega2 = None
       self.k1 = None; self.k2 = None
@@ -763,7 +765,7 @@ class srs_forest(laser_forest):
 
     # Ray trace with SRS modelling
     print('starting ray tracing')
-    conv = 2; niter = 0; ra_frac = 0.3
+    conv = 2; niter = 0; ra_frac = 1.0
     while conv > 0.1 and niter < 10:
       # Initialisation
       nnzero = 0
@@ -802,7 +804,7 @@ class srs_forest(laser_forest):
           if exch > 1e-153:
             Wcell -= exch
             pact = exch/drV[l.cid]
-            forest = self.__raman_mode__(n[l.cid-1],om1[l.cid],Te[l.cid-1])
+            forest = self.__raman_mode__(n[l.cid],om1[l.cid],Te[l.cid])
             rrays.append(rray(l.cid-l.dire,pact*om1[l.cid],-l.dire,forest))
             if pump_depletion:
               l.pwr -= pact*self.omega0
@@ -811,7 +813,7 @@ class srs_forest(laser_forest):
           exch = np.minimum(grres[l.cid]*Wcell*I1n[l.cid]*dr[l.cid],Wcell)
           if exch > 1e-153:
             pact = exch/drV[l.cid]
-            forest = self.__raman_mode__(n[l.cid-1],om1res[l.cid],Te[l.cid-1])
+            forest = self.__raman_mode__(n[l.cid],om1res[l.cid],Te[l.cid])
             rrays.append(rray(l.cid-l.dire,pact*om1res[l.cid],-l.dire,forest))
             if pump_depletion:
               l.pwr = l.pwr-pact*self.omega0
@@ -884,6 +886,7 @@ class srs_forest(laser_forest):
       niter += 1
       print(f'Iteration: {niter}; Convergence: {conv}')
 
+    """
     for i in range(cells):
       if n[i] < self.nc0:
         print(n[i]/self.nc0)
@@ -894,6 +897,7 @@ class srs_forest(laser_forest):
         print(gr[i], grres[i])
         print(gr[i]*I1[i],grres[i]*I1n[i])
         print('')
+    """
 
     # Convert to intensity from wave action
     I0 *= self.omega0
@@ -909,7 +913,7 @@ class srs_forest(laser_forest):
     if plots:
       self.__srs_plots__(x,n,gr,I0,I1,centred=True,xc=xc)
 
-    return x,xc,n,I0,I1,gr
+    return x,xc,n,I0,I1,gr,om1
 
   def ray_trace_solve3(self,xrange:tuple,nrange:tuple,ntype:str, \
       I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \
@@ -1160,32 +1164,15 @@ class srs_forest(laser_forest):
     cells = points-1
     xc = np.array([(x[i]+x[i+1])/2 for i in range(cells)])
     if len(n) == cells:
-      #n0 = n[0]
-      #n1 = n[-1]
-      nf = PchipInterpolator(xc,n)
-      #n = np.zeros_like(x)
-      #n[1:-1] = nf(x[1:-1])
-      n = nf(x[1:-1])
-      #n[0] = n0
-      #n[-1] = n1
-      #T0 = Te[0]
-      #T1 = Te[-1]
-      Tef = PchipInterpolator(xc,Te)
-      #Te = np.zeros_like(x)
-      #Te[1:-1] = Tef(x[1:-1])
-      Te = Tef(x[1:-1])
-      #Te[0] = T0
-      #Te[-1] = T1
-      if Ti is not None:
-        #T0 = Ti[0]
-        #T1 = Ti[0]
-        Tif = PchipInterpolator(xc,Ti)
-        #Ti = np.zeros_like(x)
-        #Ti[1:-1] = Tif(x[1:-1])
-        Ti = Tif(x[1:-1])
-        #Ti[0] = T0
-        #Ti[-1] = T1
+      #x = x[1:-1]
       x = x[1:-1]
+      nf = PchipInterpolator(xc,n)
+      n = nf(x)
+      Tef = PchipInterpolator(xc,Te)
+      Te = Tef(x)
+      if Ti is not None:
+        Tif = PchipInterpolator(xc,Ti)
+        Ti = Tif(x)
       points = len(x)
       cells = points - 1
 
@@ -1195,6 +1182,8 @@ class srs_forest(laser_forest):
           self.__resonance_range__(n,absorption,Te,Ti)
     else:
       grres, om1res, ompe, k0 = self.__resonance_range__(n,absorption,Te)
+    om1res = np.where(om1res > 1e-153, om1res, 1e-154)
+    grres = np.where(om1res > 1e-153, grres, 0.0)
     grresf = PchipInterpolator(x,grres)
     om1resf = PchipInterpolator(x,om1res)
 
@@ -1217,9 +1206,9 @@ class srs_forest(laser_forest):
     # Initialise kappa1 arrays
     if absorption:
       kappa0f = PchipInterpolator(x,kappa0)
-      k1 = self.emw_dispersion(om1,target='k')
-      vg1 = self.emw_group_velocity(om1,k1)
-      kappa1 = np.where(np.isnan(vg1),0.0,self.emw_damping_opt(om1,logfac,nufac)/vg1)
+      k1 = np.where(om1 > 1e-153, self.emw_dispersion(om1,target='k'), 0.0)
+      vg1 = np.where(om1 > 1e-153, self.emw_group_velocity(om1,k1),0.0)
+      kappa1 = np.where(om1 > 1e-153, self.emw_damping_opt(om1,logfac,nufac)/vg1,0.0)
       kappa1 = np.sum(kappa1,axis=0)
       kappa1f = PchipInterpolator(x,kappa1)
 
@@ -1242,8 +1231,8 @@ class srs_forest(laser_forest):
     I0 = np.ones_like(x)*P0/SA
     I1 = np.ones_like(x)*I1_seed
     I1n = P1/SA
+    I1n = np.where(om1res > 1e-153, I1n, 0.0)
     I1nf = PchipInterpolator(x,I1n)
-    #I1nf = PchipInterpolator1d(x,I1n)
     if laser == 'lhs':
       dire = 1
       crng = np.arange(1,len(x))
@@ -1255,7 +1244,7 @@ class srs_forest(laser_forest):
       crng = np.arange(len(x)-1)
       I0bc = I0[-1]; I1bc = I1[0]
       def bc(ya,yb):
-        return np.array([yb[0]-I0bc,ya[1]-I1bc])
+        return np.array([ya[1]-I1bc,yb[0]-I0bc])
     om0 = self.omega0
 
     # ODE evolution functions
@@ -1271,7 +1260,7 @@ class srs_forest(laser_forest):
 
       # SRS
       f1 = -dire*I0i*(gri/om1m*I1i+gr0/om1res*I1ni)
-      f2 = -dire*I0i/om0*(gri*I1i+grresf(xi)*I1ni)
+      f2 = -dire*I0i/om0*(gri*I1i+gr0*I1ni)
 
       # Geometry modification of intensity
       if geometry == 'planar':
@@ -1295,7 +1284,9 @@ class srs_forest(laser_forest):
 
     # Iteratively solve BVP and update frequencies
     conv = 2*om0; niter = 1
+    #print(x,I0,I1,I0[-1],I1[0])
     while (conv > om0/100 and niter < 11):
+    #while (niter < 11):
 
       # Initialisation
       I0old = copy.deepcopy(I0)
@@ -1333,7 +1324,7 @@ class srs_forest(laser_forest):
                 +np.sum(dI1[i:]*om1[1+i:]))/np.sum(noisecont[i:]+dI1[i:])
             gr[i] = self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i])
           else:
-            om1[i] = 0.0
+            om1[i] = 1e-154
             gr[i] = 0.0
       else:
         om1[0] = om1_seed
@@ -1348,9 +1339,10 @@ class srs_forest(laser_forest):
       om1mf = PchipInterpolator(x,om1)
       grf = PchipInterpolator(x,gr)
       if absorption:
-        k1 = self.emw_dispersion(om1,target='k')
-        vg1 = self.emw_group_velocity(om1,k1)
-        kappa1 = np.where(np.isnan(vg1),0.0,self.emw_damping_opt(om1,logfac,nufac)/vg1)
+        kappa0f = PchipInterpolator(x,kappa0)
+        k1 = np.where(om1 > 1e-153, self.emw_dispersion(om1,target='k'), 0.0)
+        vg1 = np.where(om1 > 1e-153, self.emw_group_velocity(om1,k1),0.0)
+        kappa1 = np.where(om1 > 1e-153, self.emw_damping_opt(om1,logfac,nufac)/vg1,0.0)
         kappa1 = np.sum(kappa1,axis=0)
         kappa1f = PchipInterpolator(x,kappa1)
       nI = np.count_nonzero(I0 > 1)+np.count_nonzero(I1 > 1)
@@ -1361,7 +1353,7 @@ class srs_forest(laser_forest):
     if plots:
       self.__srs_plots__(x,n,gr,I0,I1)
 
-    return x,n,I0,I1,gr
+    return x,n,I0,I1,gr,om1
   
   def wave_mixing_solve_test(self,I1_noise:float,xrange:tuple, \
       nrange:tuple,ntype:str,points=101,plots=False,pump_depletion=True,\
@@ -1405,12 +1397,12 @@ class srs_forest(laser_forest):
         birches[i].set_electrons(electrons=True,Te=self.Te,ne=n[i])
       else:
         birches[i].set_electrons(electrons=True,Te=Te[i],ne=n[i])
-      #if n[i] > 0.01*self.nc0:
-      birches[i].alt_resonance_solve()
-      #birches[i].resonance_solve()
-      birches[i].get_gain_coeff()
+      birches[i].resonance_solve()
       if birches[i].omega1 is None:
         birches[i].omega1 = 0.0
+        birches[i].gain_coeff = 0.0
+      else:
+        birches[i].get_gain_coeff()
       if absorption:
         if Ti is not None:
           birches[i].set_ions(nion=self.nion,Ti=Ti[i]*np.ones(self.nion),\
