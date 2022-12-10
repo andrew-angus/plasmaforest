@@ -21,10 +21,12 @@ class forest:
   def __init__(self,ndim:int,electrons:bool,nion:int,\
       Te:Optional[float]=None,ne:Optional[float]=None,\
       Ti:Optional[np.ndarray]=None,ni:Optional[np.ndarray]=None,\
-      Z:Optional[np.ndarray]=None,mi:Optional[np.ndarray]=None):
+      Z:Optional[np.ndarray]=None,mi:Optional[np.ndarray]=None,\
+      verbose:Optional[bool]=False):
     self.set_ndim(ndim=ndim)
     self.set_electrons(electrons=electrons,Te=Te,ne=ne)
     self.set_ions(nion=nion,Ti=Ti,ni=ni,Z=Z,mi=mi)
+    self.verbose = verbose
 
   # Set number of dimensions and null dimension-dependent properties
   def set_ndim(self,ndim:int):
