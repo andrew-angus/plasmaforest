@@ -487,6 +487,58 @@ class srs_forest(laser_forest):
       print('error: not all wavenumber attributes specified')
 
   # 1D BVP solve with parent forest setting resonance conditions
+  def bvp_solve_simple(self,W0in:float,W1in:float,dx:float,gr:float,points=1000,\
+      plots=False,pump_depletion=True):
+
+    # Refine cell size and set grid points
+    x = np.linspace(0,dx,points)
+    
+    # Initialise wave action arrays
+    W0 = np.ones_like(x)*W0in
+    W1 = np.ones_like(x)*W1in
+
+    if pump_depletion:
+      # ODE evolution functions
+      def Fsrs(xi,Wi):
+        W0i, W1i = Wi
+        f1 = -gr*W0i*W1i
+        f2 = -gr*W0i*W1i
+        return np.vstack((f1,f2))
+      def bc(ya,yb):
+        return np.array([np.abs(ya[0]-W0in),np.abs(yb[1]-W1in)])
+
+      # Solve bvp and convert to intensity for return
+      y = np.vstack((W0,W1))
+      res = solve_bvp(Fsrs,bc,x,y,tol=1e-3,max_nodes=1e6)
+      if not res.success:
+        print(res.message)
+        raise Exception("Solver failed to find a solution")
+      W0 = res.sol(x)[0]
+      W1 = res.sol(x)[1]
+    else:
+      def Fsrs(xi,Wi):
+        W1i = Wi
+        f1 = -gr*W0in*W1i
+        return f1
+      def bc(ya,yb):
+        return np.array([np.abs(yb[0]-W1in)])
+
+      # Solve bvp and convert to intensity for return
+      y = W1[np.newaxis,:]
+      res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
+      W1 = res.sol(x)[0]
+
+    if plots:
+      plt.plot(x,W0,label='Pump')
+      plt.legend()
+      plt.show()
+      plt.plot(x,W1,label='Raman')
+      plt.legend()
+      plt.show()
+
+    return x, W0, W1
+
+  # 1D BVP solve with parent forest setting resonance conditions
   def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101,\
       plots=False,pump_depletion=True):
 
