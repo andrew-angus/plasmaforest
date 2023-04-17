@@ -385,7 +385,12 @@ class srs_forest(laser_forest):
           if self.relativistic:
             perm = self.relativistic_permittivity(self.omega2,self.k2)
           else:
-            perm = self.kinetic_permittivity(self.omega2,self.k2,full=False)
+            try:
+              perm = self.kinetic_permittivity(self.omega2,self.k2,full=False)
+            except:
+              if self.verbose:
+                print('Warning: gain coefficient calculation failed')
+              perm = 1+0j
 
           fac = -np.imag(1/perm)
           self.gain_coeff = 4*sqr(K)*self.omega2*fac/\
@@ -525,7 +530,7 @@ class srs_forest(laser_forest):
 
       # Solve bvp and convert to intensity for return
       y = W1[np.newaxis,:]
-      res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
+      res = solve_bvp(Fsrs,bc,x,y,tol=1e-3,max_nodes=1e6)
       W1 = res.sol(x)[0]
 
     if plots:
@@ -539,8 +544,9 @@ class srs_forest(laser_forest):
     return x, W0, W1
 
   # 1D BVP solve with parent forest setting resonance conditions
-  def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,ntype:str,points=101,\
-      plots=False,pump_depletion=True):
+  def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,Trange:tuple,\
+      ntype:str,points=1001,\
+      plots=False,pump_depletion=True,errhndl=True):
 
     # Check SDL flag true
     if not self.sdl:
@@ -553,9 +559,15 @@ class srs_forest(laser_forest):
 
     # Establish density profile
     x,n = den_profile(xrange,nrange,ntype,points)
-    
+    x,T = den_profile(xrange,Trange,ntype,points)
+
     # Get gain for Raman seed at each point in space
-    gr = np.array([self.__gain__(n[i],self.omega1) for i in range(points)])
+    gr = np.array([self.__gain__(n[i],self.omega1,Te=T[i]) for i in range(points)])
+    nzeros = np.argwhere(gr != 0.0).flatten()
+    x = x[nzeros]
+    n = n[nzeros]
+    gr = gr[nzeros]
+    points = len(gr)
     grf = PchipInterpolator(x,gr)
 
     # Initialise wave action arrays
@@ -569,14 +581,19 @@ class srs_forest(laser_forest):
         I0i, I1i = Iin
         gri = grf(xi)
         f1 = -gri*I0i*I1i
-        f2 = -gri*I0i*I1i
-        return np.vstack((f1,f2))
+        return np.vstack((f1,f1))
       def bc(ya,yb):
         return np.array([np.abs(ya[0]-I0bc),np.abs(yb[1]-I1bc)])
 
       # Solve bvp and convert to intensity for return
       y = np.vstack((I0,I1))
-      res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
+      res = solve_bvp(Fsrs,bc,x,y,tol=1e-3,max_nodes=1e6)
+      if not res.success and errhndl:
+        print(res.message)
+        raise Exception("Solver failed to find a solution")
+      elif not res.success and self.verbose:
+        print('Warning: solver unsuccesful')
+        print(res.message)
       I0 = res.sol(x)[0]*self.omega0
       I1 = res.sol(x)[1]*self.omega1
     else:
