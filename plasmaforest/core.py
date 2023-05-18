@@ -337,7 +337,7 @@ def den_profile(xrange:tuple,nrange:tuple,ntype:str,points:int,centred:Optional[
     x = np.linspace(xrange[0],xrange[1],points)
   if ntype == 'linear':
     m = (nrange[1]-nrange[0])/(xrange[1]-xrange[0])
-    n = np.minimum(nrange[0] + np.maximum(x - xrange[0], 0) * m, nrange[1])
+    n = nrange[0] + (x - xrange[0]) * m
   elif ntype == 'exp':
     dr = abs(xrange[0]-xrange[1])
     Ln = dr/np.log(nrange[1]/nrange[0])
