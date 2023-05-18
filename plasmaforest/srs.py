@@ -1521,7 +1521,7 @@ class srs_forest(laser_forest):
       axs[0,1].plot(xc*1e6,gr)
     else:
       axs[0,1].plot(x*1e6,gr)
-    axs[0,1].set_ylabel('Wave Gain [m/Ws\^2]')
+    axs[0,1].set_ylabel('Wave Gain [m/J]')
     axs[1,0].semilogy(x*1e6,I0)
     axs[1,0].set_ylabel('I0 [W/m\^2]')
     axs[1,0].set_xlabel('x [um]')
