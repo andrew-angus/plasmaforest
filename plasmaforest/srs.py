@@ -281,10 +281,10 @@ class srs_forest(laser_forest):
     self.vg1 = self.emw_group_velocity(self.omega1,self.k1)
 
   # EPW group velocity
-  def get_vg2(self):
+  def get_vg2(self,force_fluid=False):
     if self.k2 is None:
       self.get_k2()
-    if self.mode == 'fluid':
+    if self.mode == 'fluid' or force_fluid:
       self.vg2 = self.bohm_gross_group_velocity(self.omega2,self.k2)
     elif self.mode == 'kinetic':
       if self.relativistic:
@@ -450,7 +450,7 @@ class srs_forest(laser_forest):
     if self.vg1 is None:
       self.get_vg1()
     if self.vg2 is None:
-      self.get_vg2()
+      self.get_vg2(force_fluid=True)
     if self.vthe is None:
       self.get_vth(species='e')
 
