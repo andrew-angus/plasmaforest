@@ -132,6 +132,21 @@ class forest:
       dbyl += np.sum((sqr(self.Z)*self.ni)/self.Ti)
     self.dbyl = np.sqrt(cons/dbyl)
 
+  def dby_sphere(self):
+    if self.dbyl is None:
+      self.get_dbyl()
+    return self.ne*4/3*np.pi*self.dbyl**3
+
+  def coulomb_coupling(self):
+    if self.nion > 0:
+      Z = self.Z
+    else:
+      Z = 1 # Assume hydrogen
+
+    Gam2 = 2.69e-5*Z**2*np.power(self.ne*1e-18,1/3)/(self.Te*1e-6)
+    return Gam2
+
+
   # Get electron spacing
   def get_spacing(self,species:str):
     if species == 'e':

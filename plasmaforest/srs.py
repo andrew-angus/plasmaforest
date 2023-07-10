@@ -141,14 +141,15 @@ class srs_forest(laser_forest):
       if self.mode == 'fluid':
         # Solve for EPW wavenumber and set other unknowns brentqing fluid raman dispersion
         try:
-          self.k2 = brentq(self.__bsrs__,self.k0,2*self.k0) # Look between k0 and 2k0
+          self.k2 = brentq(self.__bsrs__,self.k0,2*self.k0,\
+              xtol=4*np.finfo(float).eps) # Look between k0 and 2k0
           self.omega2 = self.bohm_gross(self.k2,target='omega')
         except:
           failed = True
       elif self.mode == 'kinetic':
         # Solve similarly to above but replacing bohm-gross with linear kinetic dispersion
         if self.relativistic:
-          self.k2 = brentq(self.__bsrs_kinr__,self.k0,2*self.k0)
+          self.k2 = brentq(self.__bsrs_kinr__,self.k0,2*self.k0,xtol=4*np.finfo(float).eps)
           self.omega2 = self.relativistic_dispersion(self.k2) # Undamped relativistic mode
           self.get_ldamping2()
         else:
@@ -157,7 +158,7 @@ class srs_forest(laser_forest):
             if self.k0 < disbnd:
               kbnd = np.minimum(2*self.k0,disbnd)
               try:
-                self.k2 = brentq(self.__bsrs_kinu__,self.k0,kbnd)
+                self.k2 = brentq(self.__bsrs_kinu__,self.k0,kbnd,xtol=4*np.finfo(float).eps)
                 self.omega2 = self.undamped_dispersion(self.k2,target='omega') # Undamped mode
                 self.get_ldamping2()
               except:
@@ -168,7 +169,8 @@ class srs_forest(laser_forest):
             ubnd = self.omega0-np.real(self.epw_kinetic_dispersion(self.k0,target='omega'))
             lbnd = self.ompe
             if lbnd < ubnd:
-              self.k2 = brentq(self.__bsrs_kin__,self.k0,2*self.k0)
+              self.k2 = brentq(self.__bsrs_kin__,self.k0,2*self.k0,\
+                  xtol=4*np.finfo(float).eps)
               omega2 = self.epw_kinetic_dispersion(self.k2,target='omega')
               self.ldamping2 = -np.imag(omega2)
               self.omega2 = np.real(omega2)
@@ -329,10 +331,10 @@ class srs_forest(laser_forest):
       self.get_vg1()
     if self.damping1 is None:
       self.get_damping1()
-    self.kappa1 = self.damping1/self.vg1
+    self.kappa1 = self.damping1/np.abs(self.vg1)
 
   # SRS gain coefficient calculations for various cases
-  def get_gain_coeff(self):
+  def get_gain_coeff(self,force_kinetic=False):
 
     # Check attributes set
     if self.ompe is None:
@@ -361,7 +363,7 @@ class srs_forest(laser_forest):
 
         if self.sdl:
           if self.ldamping2 is None:
-            self.get_ldamping2(force_kinetic=True)
+            self.get_ldamping2(force_kinetic=force_kinetic)
           if self.nion > 0:
             if self.cdamping2 is None:
               self.get_cdamping2()
@@ -581,6 +583,7 @@ class srs_forest(laser_forest):
         I0i, I1i = Iin
         gri = grf(xi)
         f1 = -gri*I0i*I1i
+        #f1 = np.where(I0i > I1i, -gri*I0i*I1i, 0.0)
         return np.vstack((f1,f1))
       def bc(ya,yb):
         return np.array([np.abs(ya[0]-I0bc),np.abs(yb[1]-I1bc)])
