@@ -152,7 +152,7 @@ class wave_forest(forest):
     impact = np.log(np.exp(self.coulomb_log_ei)/self.dbye*(vth1Drms/omega))
     #print(impact)
     return sqr(self.ompe/omega)/(3*pwr(2*np.pi,3/2))*self.Z \
-        /(self.ne+np.sum(self.ni))*pwr(self.ompe/vth1Drms,3)*self.ompe*impact/2
+        /self.ne*pwr(self.ompe/vth1Drms,3)*self.ompe*impact/2
 
   # Calculate parts of emw damping independent of wave frequency
   def emw_damping_facs(self) -> Tuple[floats,floats]:
