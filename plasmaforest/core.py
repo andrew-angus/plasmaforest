@@ -146,7 +146,6 @@ class forest:
     Gam2 = 2.69e-5*Z**2*np.power(self.ne*1e-18,1/3)/(self.Te*1e-6)
     return Gam2
 
-
   # Get electron spacing
   def get_spacing(self,species:str):
     if species == 'e':

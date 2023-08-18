@@ -154,7 +154,7 @@ class srs_forest(laser_forest):
           self.get_ldamping2()
         else:
           if undamped:
-            disbnd = 0.7546*self.ompe/self.vthe
+            disbnd = 0.75465*self.ompe/self.vthe
             if self.k0 < disbnd:
               kbnd = np.minimum(2*self.k0,disbnd)
               try:

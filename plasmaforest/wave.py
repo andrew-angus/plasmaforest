@@ -363,10 +363,10 @@ class wave_forest(forest):
     therm = self.vthe/self.ompe
     if target == 'omega':
       om = self.bohm_gross(arg,target='omega')
-      zeta0 = om/(arg*self.vthe)
+      zeta0 = np.maximum(om/(arg*self.vthe),1.503)
       K0 = np.sqrt(np.real(dZfun(zeta0)))
       Kf = arg*therm
-      if Kf > 0.75461:
+      if Kf > 0.75465:
         raise Exception(\
           'No omega solution for given k by undamped kinetic dispersion')
       zeta = self.zetar_int(zeta0,K0,Kf)
@@ -374,7 +374,7 @@ class wave_forest(forest):
     elif target == 'k':
       # Initial guess at k from fluid dispersion  
       kguess = self.bohm_gross(arg,target='k')
-      zeta0 = arg/(kguess*self.vthe)
+      zeta0 = np.maximum(arg/(kguess*self.vthe),1.503)
       K0 = np.sqrt(np.real(dZfun(zeta0)))
       Kguess = kguess*therm
       # Objective function
