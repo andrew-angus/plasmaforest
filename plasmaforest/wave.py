@@ -250,15 +250,13 @@ class wave_forest(forest):
           /(np.abs(N)*(sqr(N)-1))*(1+2/z0+2/sqr(z0))/(1+6*sqr(kdb)-5/(2*mu))
     else:
       # First order approximation of non-relativistic landau damping
-      # Calculated according to Swanson - Plasma Waves (2012)
       if mode == 'fluid':
-        gamma = np.sqrt(np.pi)*sqr(self.ompe*omega)/pwr(k*self.vthe,3)\
-            *np.exp(-sqr(omega/(k*self.vthe)))
+        zeta = omega/(k*self.vthe)
+        gamma = np.sqrt(np.pi)*pwr(zeta,3)*omega/(1+3/sqr(zeta))*np.exp(-sqr(zeta))
       # Kinetic damping approximation on taylor expansion of permittivity
       elif mode == 'kinetic':
         eps = self.kinetic_permittivity(omega,k,full=False)
-        #depsdom = 2*omega/sqr(self.ompe) # Fluid limit
-        step = 1e-6*omega # Relative step
+        #depsdom = 2*sqr(self.ompe)/pwr(omega,3) # Plasma frequency limit
         depsdom = self.__depsdomkin__(omega,k)
         gamma = np.imag(eps)/depsdom
 
@@ -267,8 +265,8 @@ class wave_forest(forest):
   # Derivative of real kinetic permittivity wrt omega
   def __depsdomkin__(self,omega:float,k:float,step:Optional[float]=1e-6):
     step *= omega # Relative step
-    return np.real(self.kinetic_permittivity(omega+step,k,full=False)\
-        -self.kinetic_permittivity(omega-step,k,full=False))/(2*step) # Central differences
+    return (np.real(self.kinetic_permittivity(omega+step,k,full=False))-\
+        np.real(self.kinetic_permittivity(omega-step,k,full=False)))/(2*step) # Central differences
 
   # Derivative of real kinetic permittivity wrt k
   def __depsdkkin__(self,omega:float,k:float,step:Optional[float]=1e-6):
