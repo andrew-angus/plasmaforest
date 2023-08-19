@@ -283,7 +283,7 @@ class srs_forest(laser_forest):
     self.vg1 = self.emw_group_velocity(self.omega1,self.k1)
 
   # EPW group velocity
-  def get_vg2(self,force_fluid=False):
+  def get_vg2(self,force_fluid=True):
     if self.k2 is None:
       self.get_k2()
     if self.mode == 'fluid' or force_fluid:
@@ -351,15 +351,16 @@ class srs_forest(laser_forest):
 
     if self.srs:
 
-      # Calculate constants
-      K = np.abs(self.k2)*sqr(self.ompe)\
-          /np.sqrt(8*sc.m_e*self.ne*self.omega0*self.omega1*self.omega2)
-      gamma = (2+self.ndim)/self.ndim
-      prefac = 0.5*gamma
-      Kf = K/sqr(self.ompe)*np.abs(sqr(self.omega2)-prefac*sqr(self.vthe*self.k2))
-
       # Get gain coefficent for each case
       if self.mode == 'fluid':
+
+        # Calculate constants
+        K = np.abs(self.k2)*sqr(self.ompe)\
+            /np.sqrt(8*sc.m_e*self.ne*self.omega0*self.omega1*self.omega2)
+        gamma = (2+self.ndim)/self.ndim
+        prefac = 0.5*gamma
+        Kf = K/sqr(self.ompe)*np.abs(sqr(self.omega2)-prefac*sqr(self.vthe*self.k2))
+
 
         if self.sdl:
           if self.ldamping2 is None:
@@ -373,12 +374,16 @@ class srs_forest(laser_forest):
 
           res = self.bohm_gross_res(self.omega2,self.k2)*0.5*self.omega2
           nueff = nu2/(sqr(res)+sqr(nu2))
-          self.gain_coeff = 2*sqr(K)*nueff/(pwr(sc.c,4)*np.abs(self.k0*self.k1))
-          self.gain_coeff *= self.omega1*self.omega0
+          #self.gain_coeff = 2*sqr(K)*nueff/(pwr(sc.c,4)*np.abs(self.k0*self.k1))
+          #self.gain_coeff *= self.omega1*self.omega0
+          fac = nueff*sqr(self.ompe)/self.omega2
+          self.gain_coeff = sqr(sc.e/(sqr(sc.c)*sc.m_e))/(4*sc.epsilon_0)\
+              *fac*sqr(self.k2)/np.abs(self.k0*self.k1)
 
         else:
-          self.gain_coeff = 2*Kf/(sqr(sc.c)*self.vthe*np.sqrt(prefac*\
-              np.abs(self.k0*self.k1*self.k2)))
+          raise Exception('not implemented')
+          #self.gain_coeff = 2*Kf/(sqr(sc.c)*self.vthe*np.sqrt(prefac*\
+          #    np.abs(self.k0*self.k1*self.k2)))
 
       elif self.mode == 'kinetic':
 
@@ -395,15 +400,14 @@ class srs_forest(laser_forest):
               perm = 1+0j
 
           fac = -np.imag(1/perm)
-          self.gain_coeff = 4*sqr(K)*self.omega2*fac/\
-              (pwr(sc.c,4)*sqr(self.ompe)*np.abs(self.k0*self.k1))
-          self.gain_coeff *= self.omega1*self.omega0
-
+          self.gain_coeff = sqr(sc.e/(sqr(sc.c)*sc.m_e))/(2*sc.epsilon_0)\
+              *fac*sqr(self.k2)/np.abs(self.k0*self.k1)
         else:
-          if self.vg2 is None:
-            self.get_vg2()
-          self.gain_coeff = sqr(self.ompe)*self.k2/(sqr(sc.c)*np.sqrt(2*sc.m_e*\
-              self.omega2*self.k0*np.abs(self.k1)*self.ne*self.vg2))
+          raise Exception('not implemented')
+          #if self.vg2 is None:
+          #  self.get_vg2()
+          #self.gain_coeff = sqr(self.ompe)*self.k2/(sqr(sc.c)*np.sqrt(2*sc.m_e*\
+          #    self.omega2*self.k0*np.abs(self.k1)*self.ne*self.vg2))
     else:
       self.gain_coeff = 0.0
 
@@ -423,8 +427,8 @@ class srs_forest(laser_forest):
         or self.omega1 is None or self.omega2 is None:
       self.resonance_solve()
 
-    fac = sc.e*self.k2*self.ompe*np.sqrt(1/\
-        (8*self.omega0*self.omega1*self.omega2*sc.epsilon_0*self.k0))/(sc.c*sc.m_e)
+    #fac = sc.e*self.k2*self.ompe*np.sqrt(1/\
+        #(8*self.omega0*self.omega1*self.omega2*sc.epsilon_0*self.k0))/(sc.c*sc.m_e)
     #self.gamma0 = fac*np.sqrt(self.I0)
     self.get_vos0()
     self.gamma0 = self.k2*self.vos0/4*self.ompe/np.sqrt(self.omega1*self.omega2)
@@ -444,7 +448,7 @@ class srs_forest(laser_forest):
     self.gamma = np.sqrt((nu1-nu2)**2/4+self.gamma0**2)-nu1/2-nu2/2
 
   # Get Rosenbluth coefficient
-  def get_rosenbluth(self,gradn):
+  def get_rosenbluth(self,gradn=None,gradT=None,force_kinetic=False):
 
     # Check relevant attributes assigned
     if self.gamma0 is None:
@@ -455,13 +459,23 @@ class srs_forest(laser_forest):
       self.get_vg2(force_fluid=True)
     if self.vthe is None:
       self.get_vth(species='e')
+    if self.ldamping2 is None:
+      self.get_ldamping2(force_kinetic=force_kinetic)
+    
+    if gradn is None and gradT is None:
+      raise Exception('must provide one of gradn or gradT')
 
     # Gradient of wavenumber mismatch
-    dkmis = gradn*-0.5*sqr(sc.e)/(sc.m_e*sc.epsilon_0)*\
-        (1/(sc.c**2*self.k0)-2/(3*self.vthe**2*self.k2)-1/(sc.c**2*self.k1))
+    dkmis = 0.0
+    if gradn is not None:
+      dkmis += gradn*-0.5*sqr(sc.e)/(sc.m_e*sc.epsilon_0)*\
+          (1/(sc.c**2*self.k0)-2/(3*self.vthe**2*self.k2)-1/(sc.c**2*self.k1))
+    if gradT is not None:
+      dkmis += -self.k2/(4*self.Te)*gradT
 
     # Rosenbluth gain coefficient
     self.rosenbluth = 2*np.pi*sqr(self.gamma0)/np.abs(self.vg1*self.vg2*dkmis)
+    self.rose_region = 2*self.ldamping2/np.abs(self.vg2*dkmis)
 
   # Do resonance solve by Kruer formula i.e. assume omega2 equals ompe
   def kruer_resonance(self):
@@ -548,7 +562,7 @@ class srs_forest(laser_forest):
   # 1D BVP solve with parent forest setting resonance conditions
   def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,Trange:tuple,\
       ntype:str,points=1001,\
-      plots=False,pump_depletion=True,errhndl=True):
+      plots=False,pump_depletion=True,errhndl=True,force_kinetic=False):
 
     # Check SDL flag true
     if not self.sdl:
@@ -564,7 +578,8 @@ class srs_forest(laser_forest):
     x,T = den_profile(xrange,Trange,ntype,points)
 
     # Get gain for Raman seed at each point in space
-    gr = np.array([self.__gain__(n[i],self.omega1,Te=T[i]) for i in range(points)])
+    gr = np.array([self.__gain__(n[i],self.omega1,Te=T[i],force_kinetic=force_kinetic) \
+        for i in range(points)])
     nzeros = np.argwhere(gr != 0.0).flatten()
     x = x[nzeros]
     n = n[nzeros]
@@ -1446,7 +1461,7 @@ class srs_forest(laser_forest):
 
   # SRS gain function for any density and Raman frequency
   def __gain__(self,ne:float,om1:float,ompe:Optional[float]=None,\
-      k0:Optional[float]=None,Te:Optional[float]=None):
+      k0:Optional[float]=None,Te:Optional[float]=None,force_kinetic:Optional[bool]=False):
     birch = self.__raman_mode__(ne,om1,Te)
     if k0 is None:
       birch.get_k0()
@@ -1456,7 +1471,7 @@ class srs_forest(laser_forest):
       birch.ompe = ompe
     k1 = -birch.emw_dispersion(om1,target='k')
     birch.set_wavenumbers(k1,birch.k0-k1)
-    birch.get_gain_coeff()
+    birch.get_gain_coeff(force_kinetic=force_kinetic)
     return birch.gain_coeff
 
   # Resonance solve across a density range
