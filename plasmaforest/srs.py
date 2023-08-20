@@ -271,8 +271,9 @@ class srs_forest(laser_forest):
         omega = self.relativistic_dispersion(self.k2)
         self.ldamping2 = self.epw_landau_damping(np.real(omega),self.k2,'kinetic',self.relativistic)
       else:
-        omega = self.epw_kinetic_dispersion(self.k2,target='omega')
-        self.ldamping2 = -np.imag(omega)
+        #omega = self.epw_kinetic_dispersion(self.k2,target='omega')
+        #self.ldamping2 = -np.imag(omega)
+        self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,'kinetic',self.relativistic)
     else:
       self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,self.mode,self.relativistic)
 
@@ -562,7 +563,7 @@ class srs_forest(laser_forest):
   # 1D BVP solve with parent forest setting resonance conditions
   def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,Trange:tuple,\
       ntype:str,points=1001,\
-      plots=False,pump_depletion=True,errhndl=True,force_kinetic=False):
+      plots=False,pump_depletion=True,errhndl=True,force_kinetic=False,cutoff=True):
 
     # Check SDL flag true
     if not self.sdl:
@@ -580,10 +581,11 @@ class srs_forest(laser_forest):
     # Get gain for Raman seed at each point in space
     gr = np.array([self.__gain__(n[i],self.omega1,Te=T[i],force_kinetic=force_kinetic) \
         for i in range(points)])
-    nzeros = np.argwhere(gr != 0.0).flatten()
-    x = x[nzeros]
-    n = n[nzeros]
-    gr = gr[nzeros]
+    if cutoff:
+      nzeros = np.argwhere(gr != 0.0).flatten()
+      x = x[nzeros]
+      n = n[nzeros]
+      gr = gr[nzeros]
     points = len(gr)
     grf = PchipInterpolator(x,gr)
 
@@ -1469,9 +1471,12 @@ class srs_forest(laser_forest):
       birch.k0 = k0
     if ompe is not None:
       birch.ompe = ompe
-    k1 = -birch.emw_dispersion(om1,target='k')
-    birch.set_wavenumbers(k1,birch.k0-k1)
-    birch.get_gain_coeff(force_kinetic=force_kinetic)
+    if om1 < birch.ompe:
+      birch.gain_coeff = 0.0
+    else:
+      k1 = -birch.emw_dispersion(om1,target='k')
+      birch.set_wavenumbers(k1,birch.k0-k1)
+      birch.get_gain_coeff(force_kinetic=force_kinetic)
     return birch.gain_coeff
 
   # Resonance solve across a density range

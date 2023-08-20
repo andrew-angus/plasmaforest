@@ -355,8 +355,8 @@ def den_profile(xrange:tuple,nrange:tuple,ntype:str,points:int,centred:Optional[
   elif ntype == 'exp':
     dr = abs(xrange[0]-xrange[1])
     Ln = dr/np.log(nrange[1]/nrange[0])
-    r = abs(x-xrange[1])
-    n = nrange[1]*np.exp(-r/Ln)
+    r = abs(x-xrange[0])
+    n = nrange[0]*np.exp(r/Ln)
   else:
     raise Exception("ntype must be one of \'linear\' or \'exp\'")
 
