@@ -563,7 +563,8 @@ class srs_forest(laser_forest):
   # 1D BVP solve with parent forest setting resonance conditions
   def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,Trange:tuple,\
       ntype:str,points=1001,\
-      plots=False,pump_depletion=True,errhndl=True,force_kinetic=False,cutoff=True):
+      plots=False,pump_depletion=True,errhndl=True,force_kinetic=False,\
+      cutoff=True,cdamping=False):
 
     # Check SDL flag true
     if not self.sdl:
@@ -581,13 +582,27 @@ class srs_forest(laser_forest):
     # Get gain for Raman seed at each point in space
     gr = np.array([self.__gain__(n[i],self.omega1,Te=T[i],force_kinetic=force_kinetic) \
         for i in range(points)])
+    if cdamping:
+      cd0 = np.zeros_like(gr)
+      cd1 = np.zeros_like(gr)
+      cd2 = np.zeros_like(gr)
+      for i in range(points):
+        cd0[i], cd1[i], cd2[i] = self.__cdamping__(n[i],self.omega1,Te=T[i])
     if cutoff:
       nzeros = np.argwhere(gr != 0.0).flatten()
       x = x[nzeros]
       n = n[nzeros]
       gr = gr[nzeros]
+      if cdamping:
+        cd0 = cd0[nzeros]
+        cd1 = cd1[nzeros]
+        cd2 = cd2[nzeros]
     points = len(gr)
     grf = PchipInterpolator(x,gr)
+    if cdamping:
+      cd0f = PchipInterpolator(x,cd0)
+      cd1f = PchipInterpolator(x,cd1)
+      cd2f = PchipInterpolator(x,cd2)
 
     # Initialise wave action arrays
     I0 = np.ones_like(x)*self.I0/self.omega0
@@ -596,12 +611,21 @@ class srs_forest(laser_forest):
 
     if pump_depletion:
       # ODE evolution functions
-      def Fsrs(xi,Iin):
-        I0i, I1i = Iin
-        gri = grf(xi)
-        f1 = -gri*I0i*I1i
-        #f1 = np.where(I0i > I1i, -gri*I0i*I1i, 0.0)
-        return np.vstack((f1,f1))
+      if cdamping:
+        def Fsrs(xi,Iin):
+          I0i, I1i = Iin
+          gri = grf(xi)
+          cd0i = cd0f(xi)
+          cd1i = cd1f(xi)
+          f1 = -gri*I0i*I1i - I0i*cd0i
+          f2 = -gri*I0i*I1i + I1i*cd1i
+          return np.vstack((f1,f2))
+      else:
+        def Fsrs(xi,Iin):
+          I0i, I1i = Iin
+          gri = grf(xi)
+          f1 = -gri*I0i*I1i
+          return np.vstack((f1,f1))
       def bc(ya,yb):
         return np.array([np.abs(ya[0]-I0bc),np.abs(yb[1]-I1bc)])
 
@@ -1478,6 +1502,28 @@ class srs_forest(laser_forest):
       birch.set_wavenumbers(k1,birch.k0-k1)
       birch.get_gain_coeff(force_kinetic=force_kinetic)
     return birch.gain_coeff
+
+  # Collisional damping for each mode
+  def __cdamping__(self,ne:float,om1:float,ompe:Optional[float]=None,\
+      k0:Optional[float]=None,Te:Optional[float]=None):
+    birch = self.__raman_mode__(ne,om1,Te)
+    if k0 is None:
+      birch.get_k0()
+    else:
+      birch.k0 = k0
+    if ompe is not None:
+      birch.ompe = ompe
+    if om1 < birch.ompe:
+      birch.get_kappa0()
+      birch.damping1 = 0.0
+      birch.get_cdamping2()
+    else:
+      k1 = -birch.emw_dispersion(om1,target='k')
+      birch.set_wavenumbers(k1,birch.k0-k1)
+      birch.get_kappa0()
+      birch.get_kappa1()
+      birch.get_cdamping2()
+    return birch.kappa0, birch.kappa1, birch.cdamping2
 
   # Resonance solve across a density range
   def __resonance_range__(self,n:np.ndarray,absorption:Optional[bool]=False,\
