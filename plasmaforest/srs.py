@@ -472,9 +472,9 @@ class srs_forest(laser_forest):
       dkmis += gradn*-0.5*sqr(sc.e)/(sc.m_e*sc.epsilon_0)*\
           (1/(sc.c**2*self.k0)-2/(3*self.vthe**2*self.k2)-1/(sc.c**2*self.k1))
     if gradT is not None:
-      dkmis += -self.k2/(4*self.Te)*gradT
+      dkmis += self.k2/(4*self.Te)*gradT
 
-    # Rosenbluth gain coefficient
+    # Rosenbluth gain coefficient and resonance region
     self.rosenbluth = 2*np.pi*sqr(self.gamma0)/np.abs(self.vg1*self.vg2*dkmis)
     self.rose_region = 2*self.ldamping2/np.abs(self.vg2*dkmis)
 
