@@ -135,47 +135,6 @@ class wave_forest(forest):
   # General EMW critical density
   def emw_nc(self,omega:floats) -> floats:
     return sc.epsilon_0*sc.m_e*sqr(omega/sc.e)
-
-  # General EMW collisional damping rate
-  # Use Kruer Ch 5
-  def emw_damping(self,omega:floats) -> floats:
-    self.ion_check()
-    if self.ompe is None:
-      self.get_omp(species='e')
-    if self.vthe is None:
-      self.get_vth(species='e')
-    if self.dbyl is None:
-      self.get_dbyl()
-    if self.coulomb_log_ei is None:
-      self.get_coulomb_log(species='ei')
-    vth1Drms = self.vthe/np.sqrt(2)
-    impact = np.log(np.exp(self.coulomb_log_ei)/self.dbye*(vth1Drms/omega))
-    #print(impact)
-    return sqr(self.ompe/omega)/(3*pwr(2*np.pi,3/2))*self.Z \
-        /self.ne*pwr(self.ompe/vth1Drms,3)*self.ompe*impact/2
-
-  # Calculate parts of emw damping independent of wave frequency
-  def emw_damping_facs(self) -> Tuple[floats,floats]:
-    self.ion_check()
-    if self.ompe is None:
-      self.get_omp(species='e')
-    if self.vthe is None:
-      self.get_vth(species='e')
-    if self.dbyl is None:
-      self.get_dbyl()
-    if self.coulomb_log_ei is None:
-      self.get_coulomb_log(species='ei')
-    vth1Drms = self.vthe/np.sqrt(2)
-    logfac = np.exp(self.coulomb_log_ei)/self.dbye*vth1Drms
-    nufac = sqr(self.ompe)/(3*pwr(2*np.pi,3/2))*self.Z \
-        /(self.ne+np.sum(self.ni))*pwr(self.ompe/vth1Drms,3)*self.ompe/2
-    return logfac, nufac
-
-  # Optimised emw damping calc for e.g. Raman damping at different frequencies
-  def emw_damping_opt(self,omega:floats,logfac:floats,nufac:floats) -> floats:
-    impact = np.log(logfac/omega)
-    ominv = 1/omega
-    return sqr(ominv)*nufac*impact
   
   # Refractive index function
   def emw_ri(self,nc:floats) -> floats:
@@ -194,39 +153,24 @@ class wave_forest(forest):
   def emw_vos(self,E:floats,omega:floats) -> floats:
     return sc.e*E/(sc.m_e*omega)
 
-  # EPW collisional damping
-  # Calculated according to Rand - Collision Damping of Electron Plasma Waves (1965)
-  def epw_coll_damping(self,omega:floats) -> floats:
-    # Check for attributes
+  # Quick factor for collisions common to all waves
+  def collisional_damping_factor(self):
     self.ion_check()
-    if self.coulomb_log_ei is None:
-      self.get_coulomb_log(species='ei')
     if self.vthe is None:
       self.get_vth(species='e')
     if self.ompe is None:
       self.get_omp(species='e')
 
-    # Calculate in cgs units
-    ecgs = ac.e.gauss.value
-    hbarcgs = ac.hbar.cgs.value
-    necgs = (self.ne/u.m**3).cgs.value
-    nicgs = (self.ni/u.m**3).cgs.value
-    mecgs = (sc.m_e*u.kg).cgs.value
-    vthecgs = (self.vthe/np.sqrt(2)*u.m/u.s).cgs.value
+    return self.Z*pwr(self.ompe,4)*sqr(sc.e) \
+        /(6*pwr(np.pi,1.5)*sc.epsilon_0*sc.m_e*self.vthe**3)
 
-    # Calculate switch quantities
-    omrat = omega/self.ompe
-    G = 0.27*omrat-0.091
-    regime = sqr(ecgs)/(hbarcgs*vthecgs)
-    if regime < 1:
-      logfac = np.log(2*mecgs*sqr(vthecgs)/(hbarcgs*self.ompe))-0.442-G
-    else:
-      logfac = np.log(2*mecgs*pwr(vthecgs,3)/(sqr(ecgs)*self.ompe))-1.077-G
-    
-    A = 16*np.pi/3*np.sqrt(2*np.pi)*pwr(ecgs,6)*sqr(self.Z)*necgs*nicgs\
-        /pwr(mecgs*vthecgs*omega,3)*logfac
-    
-    return 0.5*A*self.ompe
+  def collisional_damping(self,prefac,omega):
+    self.ion_check()
+    if self.coulomb_log_ei is None:
+      self.get_coulomb_log(species='ei')
+    if self.ompe is None:
+      self.get_omp(species='e')
+    return prefac*(self.coulomb_log_ei+np.log(self.ompe/omega))/sqr(omega)
 
   def epw_landau_damping(self,omega:floats,k:floats,\
       mode:str,relativistic:Optional[bool]=False) -> floats:

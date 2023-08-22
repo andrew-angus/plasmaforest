@@ -254,13 +254,17 @@ class srs_forest(laser_forest):
   def get_damping1(self):
     if self.omega1 is None:
       self.resonance_solve()
-    self.damping1 = self.emw_damping(self.omega1)
+    if self.cdampingx is None:
+      self.get_cdampingx()
+    self.damping1 = self.collisional_damping(self.cdampingx,self.omega1)
 
   # EPW collisional damping
   def get_cdamping2(self):
     if self.omega2 is None:
       self.resonance_solve()
-    self.cdamping2 = self.epw_coll_damping(self.omega2)
+    if self.cdampingx is None:
+      self.get_cdampingx()
+    self.cdamping2 = self.collisional_damping(self.cdampingx,self.omega2)
 
   # EPW Landau damping
   def get_ldamping2(self,force_kinetic:Optional[bool]=False):
@@ -333,6 +337,14 @@ class srs_forest(laser_forest):
     if self.damping1 is None:
       self.get_damping1()
     self.kappa1 = self.damping1/np.abs(self.vg1)
+
+  # EPW spatial damping
+  def get_kappa2(self):
+    if self.vg2 is None:
+      self.get_vg2()
+    if self.damping2 is None:
+      self.get_damping2()
+    self.kappa2 = self.damping2/np.abs(self.vg2)
 
   # SRS gain coefficient calculations for various cases
   def get_gain_coeff(self,force_kinetic=False):
@@ -680,7 +692,7 @@ class srs_forest(laser_forest):
     
     # Resonance range
     if absorption:
-      grres, om1res, ompe, k0, kappa0, logfac, nufac = \
+      grres, om1res, ompe, k0, kappa0, dampingfac = \
           self.__resonance_range__(n,absorption)
     else:
       grres, om1res, ompe, k0 = self.__resonance_range__(n,absorption)
@@ -820,7 +832,7 @@ class srs_forest(laser_forest):
     
     # Resonance range
     if absorption:
-      grres, om1res, ompe, k0, kappa0, logfac, nufac = \
+      grres, om1res, ompe, k0, kappa0, dampingfac = \
           self.__resonance_range__(n,absorption,Te,Ti)
     else:
       grres, om1res, ompe, k0 = self.__resonance_range__(n,absorption,Te)
@@ -959,9 +971,9 @@ class srs_forest(laser_forest):
               r.forest.ompe = ompe[r.cid]
               r.forest.k1 = r.forest.emw_dispersion(r.forest.omega1,target='k')
               r.forest.get_vg1()
-              kappa1 = np.sum(r.forest.emw_damping_opt(r.forest.omega1,\
-                  logfac[:,r.cid],nufac[:,r.cid]))/r.forest.vg1
-              r.pwr *= 1-np.minimum(2*kappa1*dr[r.cid],1)
+              r.forest.cdampingx = dampingfac[:,r.cid]
+              r.forest.get_kappa1()
+              r.pwr *= 1-np.minimum(2*np.sum(r.forest.kappa1)*dr[r.cid],1)
               Wcell = r.pwr*rfac
 
             # Lower power threshold
@@ -1291,7 +1303,7 @@ class srs_forest(laser_forest):
 
     # Resonance solve for each density point
     if absorption:
-      grres, om1res, ompe, k0, kappa0, logfac, nufac = \
+      grres, om1res, ompe, k0, kappa0, dampingfac = \
           self.__resonance_range__(n,absorption,Te,Ti)
     else:
       grres, om1res, ompe, k0 = self.__resonance_range__(n,absorption,Te)
@@ -1321,7 +1333,7 @@ class srs_forest(laser_forest):
       kappa0f = PchipInterpolator(x,kappa0)
       k1 = np.where(om1 > 1e-153, self.emw_dispersion(om1,target='k'), 0.0)
       vg1 = np.where(om1 > 1e-153, self.emw_group_velocity(om1,k1),0.0)
-      kappa1 = np.where(om1 > 1e-153, self.emw_damping_opt(om1,logfac,nufac)/vg1,0.0)
+      kappa1 = np.where(om1 > 1e-153, self.collisional_damping(dampingfac,om1)/vg1,0.0)
       kappa1 = np.sum(kappa1,axis=0)
       kappa1f = PchipInterpolator(x,kappa1)
 
@@ -1455,7 +1467,7 @@ class srs_forest(laser_forest):
         kappa0f = PchipInterpolator(x,kappa0)
         k1 = np.where(om1 > 1e-153, self.emw_dispersion(om1,target='k'), 0.0)
         vg1 = np.where(om1 > 1e-153, self.emw_group_velocity(om1,k1),0.0)
-        kappa1 = np.where(om1 > 1e-153, self.emw_damping_opt(om1,logfac,nufac)/vg1,0.0)
+        kappa1 = np.where(om1 > 1e-153, self.collisional_damping(dampingfac,om1)/vg1,0.0)
         kappa1 = np.sum(kappa1,axis=0)
         kappa1f = PchipInterpolator(x,kappa1)
       nI = np.count_nonzero(I0 > 1)+np.count_nonzero(I1 > 1)
@@ -1552,11 +1564,10 @@ class srs_forest(laser_forest):
     k0 = np.array([i.k0 for i in birches])
     if absorption:
       kappa0 = np.array([np.sum(i.kappa0) for i in birches])
-      logfac = np.zeros((self.nion,len(kappa0)))
-      nufac = np.zeros_like(logfac)
+      dampingfac = np.zeros((self.nion,len(kappa0)))
       for i,j in enumerate(birches):
-        logfac[:,i], nufac[:,i] = j.emw_damping_facs()
-      return grres, om1res, ompe, k0, kappa0, logfac, nufac
+        dampingfac[:,i] = j.cdampingx
+      return grres, om1res, ompe, k0, kappa0, damping_fac
     else:
       return grres, om1res, ompe, k0
 

@@ -13,12 +13,14 @@ class laser_forest(wave_forest):
     self.omega0 = None # Laser frequency
     self.kvac = None # Laser wavenumber in vacuum
     self.nc0 = None # Critical density
+    self.cdampingx = None
 
   # Update nullfications on core attribute set routines
   def set_ndim(self,*args,**kwargs):
     super().set_ndim(*args,**kwargs)
     self.damping0 = None # Collisional damping rate
     self.kappa0 = None
+    self.cdampingx = None
   def set_electrons(self,*args,**kwargs):
     super().set_electrons(*args,**kwargs)
     self.k0 = None # Laser wavenumber in plasma
@@ -28,10 +30,12 @@ class laser_forest(wave_forest):
     self.B0 = None # B-field
     self.damping0 = None # Collisional damping rate
     self.kappa0 = None
+    self.cdampingx = None
   def set_ions(self,*args,**kwargs):
     super().set_ions(*args,**kwargs)
     self.damping0 = None # Collisional damping rate
     self.kappa0 = None
+    self.cdampingx = None
 
   # Update intensity attribute
   def set_intensity(self,I0:floats):
@@ -62,11 +66,17 @@ class laser_forest(wave_forest):
       self.get_omega0()
     self.nc0 = self.emw_nc(self.omega0)
 
+  # laser collisional factor
+  def get_cdampingx(self):
+    self.cdampingx = self.collisional_damping_factor()
+
   # Get laser collisional damping rate
   def get_damping0(self):
     if self.omega0 is None:
       self.get_omega0()
-    self.damping0 = self.emw_damping(self.omega0)
+    if self.cdampingx is None:
+      self.get_cdampingx()
+    self.damping0 = self.collisional_damping(self.cdampingx,self.omega0)
 
   # Laser spatial damping
   def get_kappa0(self):
