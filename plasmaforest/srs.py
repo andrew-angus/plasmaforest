@@ -277,7 +277,8 @@ class srs_forest(laser_forest):
       else:
         #omega = self.epw_kinetic_dispersion(self.k2,target='omega')
         #self.ldamping2 = -np.imag(omega)
-        self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,'kinetic',self.relativistic)
+        omega = self.undamped_dispersion(self.k2,target='omega')
+        self.ldamping2 = self.epw_landau_damping(omega,self.k2,'kinetic',self.relativistic)
     else:
       self.ldamping2 = self.epw_landau_damping(self.omega2,self.k2,self.mode,self.relativistic)
 
@@ -347,7 +348,7 @@ class srs_forest(laser_forest):
     self.kappa2 = self.damping2/np.abs(self.vg2)
 
   # SRS gain coefficient calculations for various cases
-  def get_gain_coeff(self,force_kinetic=False):
+  def get_gain_coeff(self,collisional=True,force_kinetic=False):
 
     # Check attributes set
     if self.ompe is None:
@@ -378,7 +379,7 @@ class srs_forest(laser_forest):
         if self.sdl:
           if self.ldamping2 is None:
             self.get_ldamping2(force_kinetic=force_kinetic)
-          if self.nion > 0:
+          if self.nion > 0 and collisional:
             if self.cdamping2 is None:
               self.get_cdamping2()
             nu2 = np.sum(self.cdamping2) + self.ldamping2
@@ -402,6 +403,15 @@ class srs_forest(laser_forest):
 
         if self.sdl:
 
+          #if self.ldamping2 is None:
+          #  self.get_ldamping2()
+          if self.nion > 0 and collisional:
+            if self.cdamping2 is None:
+              self.get_cdamping2()
+          #  nu2 = np.sum(self.cdamping2) + self.ldamping2
+          #else:
+          #  nu2 = self.ldamping2
+
           if self.relativistic:
             perm = self.relativistic_permittivity(self.omega2,self.k2)
           else:
@@ -412,7 +422,14 @@ class srs_forest(laser_forest):
                 print('Warning: gain coefficient calculation failed')
               perm = 1+0j
 
-          fac = -np.imag(1/perm)
+          #res = np.real(perm)*sqr(self.ompe)/(2*self.omega2)
+          #nueff = nu2/(sqr(res)+sqr(nu2))
+          #fac = nueff*sqr(self.ompe)/self.omega2
+          #self.gain_coeff = sqr(sc.e/(sqr(sc.c)*sc.m_e))/(4*sc.epsilon_0)\
+              #*fac*sqr(self.k2)/np.abs(self.k0*self.k1)
+          if collisional:
+            perm += 1j*2*np.sum(self.cdamping2)/sqr(self.ompe)*self.omega2
+          fac = np.imag(perm)/sqr(np.abs(perm))
           self.gain_coeff = sqr(sc.e/(sqr(sc.c)*sc.m_e))/(2*sc.epsilon_0)\
               *fac*sqr(self.k2)/np.abs(self.k0*self.k1)
         else:
@@ -592,7 +609,8 @@ class srs_forest(laser_forest):
     x,T = den_profile(xrange,Trange,ntype,points)
 
     # Get gain for Raman seed at each point in space
-    gr = np.array([self.__gain__(n[i],self.omega1,Te=T[i],force_kinetic=force_kinetic) \
+    gr = np.array([self.__gain__(n[i],self.omega1,Te=T[i],force_kinetic=force_kinetic,\
+        collisional=cdamping) \
         for i in range(points)])
     if cdamping:
       cd0 = np.zeros_like(gr)
@@ -1499,7 +1517,8 @@ class srs_forest(laser_forest):
 
   # SRS gain function for any density and Raman frequency
   def __gain__(self,ne:float,om1:float,ompe:Optional[float]=None,\
-      k0:Optional[float]=None,Te:Optional[float]=None,force_kinetic:Optional[bool]=False):
+      k0:Optional[float]=None,Te:Optional[float]=None,\
+      force_kinetic:Optional[bool]=False,collisional:Optional[bool]=True):
     birch = self.__raman_mode__(ne,om1,Te)
     if k0 is None:
       birch.get_k0()
@@ -1512,7 +1531,7 @@ class srs_forest(laser_forest):
     else:
       k1 = -birch.emw_dispersion(om1,target='k')
       birch.set_wavenumbers(k1,birch.k0-k1)
-      birch.get_gain_coeff(force_kinetic=force_kinetic)
+      birch.get_gain_coeff(force_kinetic=force_kinetic,collisional=collisional)
     return birch.gain_coeff
 
   # Collisional damping for each mode
@@ -1527,7 +1546,7 @@ class srs_forest(laser_forest):
       birch.ompe = ompe
     if om1 < birch.ompe:
       birch.get_kappa0()
-      birch.damping1 = 0.0
+      birch.kappa1 = 0.0
       birch.get_cdamping2()
     else:
       k1 = -birch.emw_dispersion(om1,target='k')

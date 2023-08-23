@@ -196,12 +196,16 @@ class wave_forest(forest):
       # First order approximation of non-relativistic landau damping
       if mode == 'fluid':
         zeta = omega/(k*self.vthe)
-        gamma = np.sqrt(np.pi)*pwr(zeta,3)*omega/(1+3/sqr(zeta))*np.exp(-sqr(zeta))
+        #gamma = np.sqrt(np.pi)*pwr(zeta,3)*omega/(1+3/sqr(zeta))*np.exp(-sqr(zeta))
+        gamma = np.sqrt(np.pi)*pwr(self.ompe/(k*self.vthe),3)*self.ompe*np.exp(-sqr(zeta))
       # Kinetic damping approximation on taylor expansion of permittivity
       elif mode == 'kinetic':
-        eps = self.kinetic_permittivity(omega,k,full=False)
         #depsdom = 2*sqr(self.ompe)/pwr(omega,3) # Plasma frequency limit
-        depsdom = self.__depsdomkin__(omega,k)
+        #depsdom = 2*sqr(self.ompe)/pwr(omega,3)*(1+3/sqr(zeta))
+        #depsdom = self.__depsdomkin__(omega,k)
+        #zeta = omega/(k*self.vthe)
+        eps = self.kinetic_permittivity(omega,k,full=False)
+        depsdom = 2*self.omega2/sqr(self.ompe) # Fluid limit around natural mode
         gamma = np.imag(eps)/depsdom
 
     return gamma
