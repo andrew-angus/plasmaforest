@@ -478,7 +478,7 @@ class srs_forest(laser_forest):
     self.gamma = np.sqrt((nu1-nu2)**2/4+self.gamma0**2)-nu1/2-nu2/2
 
   # Get Rosenbluth coefficient
-  def get_rosenbluth(self,gradn=None,gradT=None,force_kinetic=False):
+  def get_rosenbluth(self,gradn=None,gradT=None,force_kinetic=False,collisional=True):
 
     # Check relevant attributes assigned
     if self.gamma0 is None:
@@ -491,6 +491,13 @@ class srs_forest(laser_forest):
       self.get_vth(species='e')
     if self.ldamping2 is None:
       self.get_ldamping2(force_kinetic=force_kinetic)
+    if collisional and self.nion > 0 and self.cdamping2 is None:
+      self.get_cdamping2()
+
+    if collisional:
+      nu2 = self.ldamping2 + np.sum(self.cdamping2)
+    else:
+      nu2 = self.ldamping2
     
     if gradn is None and gradT is None:
       raise Exception('must provide one of gradn or gradT')
@@ -505,7 +512,7 @@ class srs_forest(laser_forest):
 
     # Rosenbluth gain coefficient and resonance region
     self.rosenbluth = 2*np.pi*sqr(self.gamma0)/np.abs(self.vg1*self.vg2*dkmis)
-    self.rose_region = 2*self.ldamping2/np.abs(self.vg2*dkmis)
+    self.rose_region = 2*nu2/np.abs(self.vg2*dkmis)
 
   # Do resonance solve by Kruer formula i.e. assume omega2 equals ompe
   def kruer_resonance(self):
