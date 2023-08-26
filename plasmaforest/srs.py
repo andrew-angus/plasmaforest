@@ -1563,6 +1563,24 @@ class srs_forest(laser_forest):
       birch.get_cdamping2()
     return birch.kappa0, birch.kappa1, birch.cdamping2
 
+  # k2calcs
+  def k2_calcs(self,ne:float,om1:float):
+    birch = self.__raman_mode__(ne,om1,None)
+    birch.get_k2()
+    return birch.k2
+
+  # Profile calcs
+  def profile_calcs(self,ne:float,om1:float):
+    birch = self.__raman_mode__(ne,om1,None)
+    birch.get_omp('e')
+    birch.get_vth('e')
+    birch.get_ldamping2()
+    birch.get_gain_coeff()
+    perm = birch.kinetic_permittivity(birch.omega2,birch.k2)
+    dampingfac = np.imag(perm)/np.abs(perm)**2
+    return birch.k2, birch.gain_coeff, dampingfac, \
+        birch.ompe, birch.vthe, birch.ldamping2
+
   # Resonance solve across a density range
   def __resonance_range__(self,n:np.ndarray,absorption:Optional[bool]=False,\
       Te:Optional[np.ndarray]=None,Ti:Optional[np.ndarray]=None):

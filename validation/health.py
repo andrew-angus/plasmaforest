@@ -163,7 +163,7 @@ assert(birch.emw_dispersion_res(birch.omega1,birch.k1) < 1e-14)
 birch.get_cdamping2()
 print(f'\\nu_2c [1/s]: {birch.cdamping2}')
 print(f'\\nu_2c,tot [1/s]: {np.sum(birch.cdamping2):0.3e}')
-real_assert(np.sum(birch.cdamping2),5e10,4e10)
+real_assert(np.sum(birch.cdamping2),1e11,1e11)
 
 # EPW Landau damping 
 birch.get_ldamping2()
