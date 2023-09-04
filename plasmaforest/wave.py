@@ -312,7 +312,7 @@ class wave_forest(forest):
       zeta0 = np.maximum(om/(arg*self.vthe),1.503)
       K0 = np.sqrt(np.real(dZfun(zeta0)))
       Kf = arg*therm
-      if Kf > 0.75465:
+      if Kf > 0.754651:
         raise Exception(\
           'No omega solution for given k by undamped kinetic dispersion')
       zeta = self.zetar_int(zeta0,K0,Kf)
