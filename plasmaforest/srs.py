@@ -717,21 +717,26 @@ class srs_forest(laser_forest):
     
     # Resonance range
     if absorption:
-      grres, om1res, ompe, k0, kappa0, dampingfac = \
+      grres, om1res, ompe, k0, kappa0, dampingfac, roseg = \
           self.__resonance_range__(n,absorption)
     else:
-      grres, om1res, ompe, k0 = self.__resonance_range__(n,absorption)
+      grres, om1res, ompe, k0, roseg = self.__resonance_range__(n,absorption)
 
     # Check seed inputs
     if I1_seed > 1e-10 and om1_seed is None:
       print('Seed Raman frequency not specified, defaulting to mid x-range resonant value')
-      om1_seed = om1res[points//2]
+      om1_seed = om1res[cells//2]
       seed = True
     elif I1_seed > 1e-10:
       seed = True
     else:
       om1_seed = om1res[-1]
       seed = False
+
+    if I1_noise < 1e-153:
+      noise = False
+    else:
+      noise = True
     
     # Initialise cell arrays and seed powers
     I0 = np.zeros_like(x)
@@ -752,7 +757,7 @@ class srs_forest(laser_forest):
 
     # Ray trace with SRS modelling
     conv = 1; niter = 0
-    while conv > 1e-2 and niter < 100:
+    while (conv > 1e-4 and niter < 100) or niter < 10:
       # Initialisation
       I0old = copy.deepcopy(I0)
       I1old = copy.deepcopy(I1)
@@ -777,21 +782,37 @@ class srs_forest(laser_forest):
           P *= np.exp(-2*dx*kappa0[i])
 
         # SRS
+        # Noise signal
+        if noise:
+          #exch = P*(1-np.exp(-grres[i]*I1n[i]*dx))
+          exch = P*(1-np.exp(-grres[i]*I0[i]*1e-9*dx))
+          if exch > 1e-153:
+            if pump_depletion:
+              exch = np.minimum(exch,P)
+              P = np.maximum(0.0,P-exch)
+            if absorption:
+              forest = self.__raman_mode__(n[i],om1res[i])
+              forest.cdampingx = np.sum(dampingfac[:,i])
+              forest.get_kappa1()
+              exch *= np.exp(-2*forest.kappa1*dx)
+            forest = self.__raman_mode__(n[i-1],om1res[i])
+            rrays.append(rray(i-1,exch,forest))
+
         # Dominant signal
-        exch = gr[i]*P*(I1old[i]/om1[i])*dx
+        exch = P*(1-np.exp(-gr[i]*(I1old[i]/om1[i])*dx))
+        #exch = (I1old[i]/om1[i])*(np.exp(gr[i]*P*dx)-1)
         if exch > 1e-153:
+          if pump_depletion:
+            exch = np.minimum(exch,P)
+            P = np.maximum(0.0,P-exch)
+          if absorption:
+            forest = self.__raman_mode__(n[i],om1[i])
+            forest.cdampingx = np.sum(dampingfac[:,i])
+            forest.get_kappa1()
+            exch *= np.exp(-2*forest.kappa1*dx)
           forest = self.__raman_mode__(n[i-1],om1[i])
           rrays.append(rray(i-1,exch,forest))
-          if pump_depletion:
-            P = np.maximum(0.0,P-exch)
 
-        # Noise signal
-        exch = grres[i]*P*I1n[i]*dx
-        if exch > 1e-153:
-          forest = self.__raman_mode__(n[i-1],om1res[i])
-          rrays.append(rray(i-1,exch,forest))
-          if pump_depletion:
-            P = np.maximum(0.0,P-exch)
 
       # Update exit value
       I0[-1] += P
@@ -807,6 +828,7 @@ class srs_forest(laser_forest):
           if absorption:
             i.forest.set_electrons(electrons=True,Te=self.Te,ne=n[i.cid])
             i.forest.ompe = ompe[i.cid]
+            i.forest.cdampingx = np.sum(dampingfac[:,i.cid])
             i.forest.get_kappa1()
             i.act *= np.exp(-2*dx*i.forest.kappa1)
 
@@ -832,6 +854,7 @@ class srs_forest(laser_forest):
     tmp = I1[-1]
     I1[1:] = I1[:-1]
     I1[0] = tmp
+    I1 += I1_noise
 
     # Optionally plot
     if plots:
@@ -854,24 +877,38 @@ class srs_forest(laser_forest):
     points = len(x)
     cells = len(n)
     xc = np.array([(x[i]+x[i+1])/2 for i in range(cells)])
+
+    # Density gradient
+    nlog = np.log(n)
+    fwd = (nlog[1:]-nlog[:-1])/(xc[1:]-xc[:-1])
+    gradn = np.zeros_like(n)
+    gradn[0] = fwd[0]
+    gradn[-1] = fwd[-1]
+    gradn[1:-1] = (fwd[:-1]+fwd[1:])/2
+    gradn *= n
     
     # Resonance range
     if absorption:
-      grres, om1res, ompe, k0, kappa0, dampingfac = \
-          self.__resonance_range__(n,absorption,Te,Ti)
+      grres, om1res, ompe, k0, kappa0, dampingfac, roseg = \
+          self.__resonance_range__(n,absorption,Te,Ti,gradn=gradn)
     else:
-      grres, om1res, ompe, k0 = self.__resonance_range__(n,absorption,Te)
+      grres, om1res, ompe, k0, roseg = self.__resonance_range__(n,absorption,Te,gradn=gradn)
 
     # Check seed inputs
     if I1_seed > 1e-10 and om1_seed is None:
       print('Seed Raman frequency not specified, defaulting to mid x-range resonant value')
-      om1_seed = om1res[points//2]
+      om1_seed = om1res[cells//2]
       seed = True
     elif I1_seed > 1e-10:
       seed = True
     else:
       om1_seed = om1res[-1]
       seed = False
+
+    if I1_noise < 1e-153:
+      noise = False
+    else:
+      noise = True
 
     # Cell volumes 
     dr = np.abs(np.diff(x))
@@ -893,8 +930,8 @@ class srs_forest(laser_forest):
     gr = np.zeros_like(xc)
     if P0 is None:
       P0 = self.I0
-    if I1_noise < 0.0:
-      P1n = P0/1000
+    if I1_noise < 1e-153:
+      P1n = P0*1e-9
     else:
       P1n = I1_noise/drV
     I1n = np.where(om1res > 1e-153, P1n*drV/np.maximum(om1res,1e-153), 0.0)
@@ -916,7 +953,7 @@ class srs_forest(laser_forest):
     # Ray trace with SRS modelling
     print('starting ray tracing')
     conv = 2; niter = 0; ra_frac = 1.0
-    while conv > 0.1 and niter < 10:
+    while (conv > 0.1 and niter < 50) or niter < 20:
       # Initialisation
       nnzero = 0
       I0old = copy.deepcopy(I0)
@@ -934,39 +971,69 @@ class srs_forest(laser_forest):
       l = lray(0,P0,1)
       while (l.cid < cells and l.cid >= 0):
 
-        if n[l.cid] > self.nc0:
-          l.pwr *= 1-ra_frac
-          l.dire = -l.dire
-        else:
-          # Cell update
-          lfac = drV[l.cid]/self.omega0
+        # Cell update
+        lfac = drV[l.cid]/self.omega0
+        Wcell = l.pwr*lfac
+        I0[l.cid] += Wcell
+
+        # IB
+        if absorption:
+          l.pwr *= np.exp(-2*kappa0[l.cid]*dr[l.cid])
           Wcell = l.pwr*lfac
-          I0[l.cid] += Wcell
 
-          # IB
+        # SRS
+        # Noise signal
+        if noise:
+          ramamp = np.minimum(grres[l.cid]*I0[l.cid]*dr[l.cid]\
+              ,roseg[l.cid]*I0[l.cid]) # GP replaces this
           if absorption:
-            l.pwr *= 1-np.minimum(2*kappa0[l.cid]*dr[l.cid],1)
-            Wcell = l.pwr*lfac
-
-          # SRS
-          # Dominant signal
-          exch = np.minimum(gr[l.cid]*Wcell*I1old[l.cid]*dr[l.cid],Wcell)
-          if exch > 1e-153:
-            Wcell -= exch
+            forest = self.__raman_mode__(n[l.cid],om1res[l.cid])
+            forest.cdampingx = np.sum(dampingfac[:,l.cid])
+            forest.get_kappa1()
+            ramabs = 2*forest.kappa1*dr[l.cid]
+          else:
+            ramabs = 0.0
+          # Min amplification threshold
+          #cthresh1 = np.log(1.01)
+          cthresh1 = 0.0
+          if ramamp > np.maximum(ramabs,cthresh1):
+            #exch = P*(1-np.exp(-grres[i]*I1n[i]*dr[l.cid]))
+            exch = Wcell*(1-np.exp(-grres[l.cid]*I0[l.cid]*1e-9*dr[l.cid]))
             pact = exch/drV[l.cid]
-            forest = self.__raman_mode__(n[l.cid],om1[l.cid],Te[l.cid])
-            rrays.append(rray(l.cid-l.dire,pact*om1[l.cid],-l.dire,forest))
             if pump_depletion:
-              l.pwr -= pact*self.omega0
+              exchl = np.minimum(pact*self.omega0,l.pwr)
+              l.pwr = np.maximum(0.0,l.pwr-exchl)
+              Wcell = l.pwr*lfac
+            if absorption:
+              exch *= np.exp(-ramabs)
+            rcid = l.cid-l.dire
+            forest = self.__raman_mode__(n[rcid],om1res[l.cid],Te[rcid])
+            rrays.append(rray(rcid,pact*om1res[l.cid],-l.dire,forest))
 
-          # Noise signal
-          exch = np.minimum(grres[l.cid]*Wcell*I1n[l.cid]*dr[l.cid],Wcell)
-          if exch > 1e-153:
-            pact = exch/drV[l.cid]
-            forest = self.__raman_mode__(n[l.cid],om1res[l.cid],Te[l.cid])
-            rrays.append(rray(l.cid-l.dire,pact*om1res[l.cid],-l.dire,forest))
-            if pump_depletion:
-              l.pwr = l.pwr-pact*self.omega0
+        # Dominant signal
+        ramamp = np.minimum(gr[l.cid]*I0[l.cid]*dr[l.cid],\
+            roseg[l.cid]*I0[l.cid])
+        if absorption:
+          forest = self.__raman_mode__(n[l.cid],om1[l.cid])
+          forest.cdampingx = np.sum(dampingfac[:,l.cid])
+          forest.get_kappa1()
+          ramabs = 2*forest.kappa1*dr[l.cid]
+        else:
+          ramabs = 0.0
+        # Min amplification threshold
+        cthresh2 = np.log(1.01)
+        cthresh2 = 0.0
+        if ramamp > np.maximum(ramabs,cthresh2):
+          exch = Wcell*(1-np.exp(-gr[l.cid]*I1old[l.cid]*dr[l.cid]))
+          pact = exch/drV[l.cid]
+          if pump_depletion:
+            exchl = np.minimum(pact*self.omega0,l.pwr)
+            l.pwr = np.maximum(0.0,l.pwr-exchl)
+          if absorption:
+            exch *= np.exp(-ramabs)
+          rcid = l.cid-l.dire
+          forest = self.__raman_mode__(n[rcid],om1[l.cid],Te[rcid])
+          rrays.append(rray(rcid,pact*om1[l.cid],-l.dire,forest))
 
         if l.pwr < 1e-153:
           break
@@ -994,11 +1061,9 @@ class srs_forest(laser_forest):
             if absorption:
               r.forest.set_electrons(electrons=True,Te=Te[r.cid],ne=n[r.cid])
               r.forest.ompe = ompe[r.cid]
-              r.forest.k1 = r.forest.emw_dispersion(r.forest.omega1,target='k')
-              r.forest.get_vg1()
-              r.forest.cdampingx = dampingfac[:,r.cid]
+              r.forest.cdampingx = np.sum(dampingfac[:,r.cid])
               r.forest.get_kappa1()
-              r.pwr *= 1-np.minimum(2*np.sum(r.forest.kappa1)*dr[r.cid],1)
+              r.pwr *= np.exp(-2*r.forest.kappa1*dr[r.cid])
               Wcell = r.pwr*rfac
 
             # Lower power threshold
@@ -1026,33 +1091,14 @@ class srs_forest(laser_forest):
           I1[i] = 0.0
 
       # Calculate convergence condition
-      #plt.plot(x,I0)
-      #plt.plot(x,I0old)
-      #plt.show()
-      #plt.plot(x,I1)
-      #plt.plot(x,I1old)
-      #plt.show()
       conv = (np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old-I1)))/nnzero
       niter += 1
       print(f'Iteration: {niter}; Convergence: {conv}')
 
-    """
-    for i in range(cells):
-      if n[i] < self.nc0:
-        print(n[i]/self.nc0)
-        print(Te[i])
-        print(I0[i])
-        print(I1[i])
-        print(om1[i],om1res[i])
-        print(gr[i], grres[i])
-        print(gr[i]*I1[i],grres[i]*I1n[i])
-        print('')
-    """
-
     # Convert to intensity from wave action
     I0 *= self.omega0
-    I1[:-1] *= om1
-    #I1[-1] *= om1[0]
+    I1[:-1] *= om1 
+    I1 += I1_noise
 
     # Get Raman intensity array in proper order
     #tmp = I1[-1]
@@ -1063,7 +1109,7 @@ class srs_forest(laser_forest):
     if plots:
       self.__srs_plots__(x,n,gr,I0,I1,centred=True,xc=xc)
 
-    return x,xc,n,I0,I1,gr,om1
+    return x,xc,n,I0[:-1],I1[:-1],gr,om1
 
   def ray_trace_solve3(self,xrange:tuple,nrange:tuple,ntype:str, \
       I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \
@@ -1084,443 +1130,6 @@ class srs_forest(laser_forest):
     return self.ray_trace_solve2(x,n,Te,Ti,I1_noise,I1_seed,om1_seed,P0,plots,\
         pump_depletion,absorption,'planar')
 
-  # Extension of BVP solver to include wave mixing from noise sources
-  def wave_mixing_solve2(self,I1_noise:float,xrange:tuple, \
-      nrange:tuple,ntype:str,points=101,plots=False,pump_depletion=True,\
-      I1_seed:Optional[float]=0.0,om1_seed:Optional[float]=None):
-
-    # Check SDL flag true
-    if not self.sdl:
-      raise Exception('Non-SDL wave-mixing solve not implemented.')
-
-    # Establish density profile
-    x,n = den_profile(xrange,nrange,ntype,points)
-
-    # Resonance solve for each density point
-    grres, om1res, ompe, k0 = self.__resonance_range__(n)
-    om1resf = PchipInterpolator(x,om1res)
-    grresf = PchipInterpolator(x,grres)
-
-    # Check om1_seed input
-    if om1_seed is None:
-      om1_seed = birches[-1].omega1
-      om1 = copy.deepcopy(om1res)
-      om1f = PchipInterpolator(x,om1)
-      I1_seed = 0.0
-      seed = False
-      omega1s = om1res
-    elif om1_seed <= 0.0:
-      raise Exception('Seed Raman frequency must be positive')
-    else:
-      om1 = np.ones_like(x)*om1_seed
-      om1f = PchipInterpolator(x,om1)
-      seed = True
-      omega1s = np.r_[om1res,np.array([om1_seed])]
-
-    # Initialise intensity arrays
-    om0 = self.omega0
-    I0 = np.ones_like(x)*self.I0/om0
-    I1s = np.ones_like(x)*(I1_seed)/om1_seed
-    I1_noise /= points # Scale total noise by number of modes tracked
-    I1n = np.ones((points,points))*I1_noise
-    I1nbc = np.zeros((points,1))
-    for i in range(points):
-      I1n[i,:] /= om1res[i]
-      I1nbc[i,:] = I1n[i,-1]
-    I0bc = I0[0]; I1sbc = I1s[-1]
-    if seed:
-      I = np.vstack((I0,I1n,I1s))
-      Ibc = np.vstack((I0bc,I1nbc,I1sbc))
-      n1 = points + 1
-    else:
-      I = np.vstack((I0,I1n))
-      Ibc = np.vstack((I0bc,I1nbc))
-      n1 = points
-
-    # Calculate gain matrix and functions
-    grf = []
-    gr = np.zeros((n1,points))
-    for i in range(n1):
-      for j in range(points):
-        gr[i,j] = self.__gain__(n[j],omega1s[i],ompe[j],k0[j])
-      grf.append(PchipInterpolator(x,gr[i,:]))
-
-    for i in range(n1):
-      plt.plot(x,gr[i])
-    plt.show()
-    if pump_depletion:
-      # ODE evolution functions
-      def Fsrs(xi,Ii):
-        # Establish forest and set quantitis
-        I0i = Ii[0,:]
-        I1i = Ii[1:,:]
-        f1p = np.zeros((n1,len(xi)))
-        for i in range(n1):
-          f1p[i,:] = grf[i](xi)*I1i[i,:]
-        f1ps = np.sum(f1p,axis=0)
-        f1 = np.array([-I0i*f1ps])
-        f2 = np.array([-I0i*f1p[i,:] for i in range(n1)])
-        return np.vstack((f1,f2))
-      def bc(ya,yb):
-        I0b = np.array([ya[0]-Ibc[0]])
-        I1b = np.array([yb[i] - Ibc[i] for i in range(1,n1+1)])
-        return np.r_[I0b,I1b][:,0]
-
-      res = solve_bvp(Fsrs,bc,x,I,verbose=2)#,tol=1e-10)
-      I0 = res.sol(x)[0]*self.omega0
-      I1 = np.zeros(points)
-      om1 = np.zeros(points)
-      gr = np.zeros(points)
-      for i in range(points):
-        I1[i] = np.sum(res.sol(x)[1:,i]*omega1s)
-      for i in range(points):
-        om1[i] = np.sum(res.sol(x)[1:,i]*omega1s**2)/I1[i]
-        gr[i] = self.__gain__(n[i],om1[i],ompe[i],k0[i])
-    else:
-      I0cons = I0[0]
-      def Fsrs(xi,Iin):
-        I1i = Iin
-        gri = grf(xi)
-        f1 = -gri*I0cons*I1i
-        return f1
-      def bc(ya,yb):
-        return np.array([np.abs(yb[0]-I1bc)])
-
-      # Solve bvp and convert to intensity for return
-      y = I1[np.newaxis,:]
-      res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
-      I0 *= self.omega0
-      I1 = res.sol(x)[0]
-
-    if plots:
-      self.__srs_plots__(x,n,gr,I0,I1)
-
-    return x,n,I0,I1,gr
-
-  # Extension of BVP solver to include wave mixing from noise sources
-  def wave_mixing_solve(self,I1_noise:float,xrange:tuple, \
-      nrange:tuple,ntype:str,points=101,plots=False,pump_depletion=True,\
-      I1_seed:Optional[float]=0.0,om1_seed:Optional[float]=None):
-
-    # Check SDL flag true
-    if not self.sdl:
-      raise Exception('Non-SDL wave-mixing solve not implemented.')
-
-    # Establish density profile
-    x,n = den_profile(xrange,nrange,ntype,points)
-
-    # Resonance solve for each density point
-    grres, om1res, ompe, k0 = self.__resonance_range__(n)
-    grresf = PchipInterpolator(x,grres)
-    om1resf = PchipInterpolator(x,om1res)
-
-    # Check om1_seed input
-    if om1_seed is None:
-      om1_seed = om1res[-1]
-      om1 = copy.deepcopy(om1res)
-      om1f = PchipInterpolator(x,om1)
-      I1_seed = 0.0
-      gr = np.zeros_like(x)
-      grf = PchipInterpolator(x,gr)
-    elif om1_seed <= 0.0:
-      raise Exception('Seed Raman frequency must be positive')
-    else:
-      gr = np.array([self.__gain__(n[i],om1_seed,ompe[i],k0[i]) for i in range(len(x))])
-      grf = PchipInterpolator(x,gr)
-      om1 = np.ones_like(x)*om1_seed
-      om1f = PchipInterpolator(x,om1)
-
-    # Initialise intensity arrays
-    om0 = self.omega0
-    I0 = np.ones_like(x)*self.I0
-    I1 = np.ones_like(x)*(I1_seed)
-    I0bc = I0[0]; I1bc = I1[-1]
-
-    if pump_depletion:
-      # ODE evolution functions
-      def Fsrs(xi,Ii):
-        I0i, I1i = Ii
-        # Establish forest and set quantitis
-        om1m = om1f(xi)
-        om1res = om1resf(xi)
-        gr0 = grresf(xi)
-        gri = grf(xi)
-        f1 = -I0i*(gri/om1m*I1i+gr0/om1res*I1_noise)
-        f2 = -I0i/om0*(gri*I1i+grresf(xi)*I1_noise)
-        return np.vstack((f1,f2))
-      def bc(ya,yb):
-        return np.array([ya[0]-I0bc,yb[1]-I1bc])
-
-      # Iteratively solve BVP and update frequencies
-      conv = I1_noise
-      while (conv > I1_noise/1000):
-        I0old = I0[-1]
-        I1old = I1[0]
-        y = np.vstack((I0,I1))
-        #res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
-        res = solve_bvp(Fsrs,bc,x,y)#,tol=1e-10,max_nodes=1e5)
-        I0 = res.sol(x)[0]
-        I1 = res.sol(x)[1]#+I1_noise
-        noisecont = grresf(x[1:])*I1_noise*I0[1:]/om0*np.diff(x)
-        dI1 = np.zeros_like(I1)
-        dI1[:-1] = I1[:-1] - I1[1:]
-        dI1[-1] = I1_seed
-        dI1[:-1] = np.maximum(0.0,dI1[:-1]-noisecont)
-        for i in range(len(x)):
-          if I1[i] > 100:
-            om1[i] = (np.sum(noisecont[i:]*om1res[1+i:]) \
-                +np.sum(dI1[i:]*om1[i:]))/I1[i]
-          else:
-            om1[i] = om1res[i]
-        om1mf = PchipInterpolator(x,om1)
-        gr = np.array([self.__gain__(n[i],om1[i],ompe[i],k0[i]) for i in range(len(x))])
-        grf = PchipInterpolator(x,gr)
-        conv = np.abs(I0[-1]-I0old)+np.abs(I1[0]-I1old)
-        print(f'Convergence: {conv:0.2e}')
-    else:
-      I0cons = I0[0]
-      def Fsrs(xi,Iin):
-        I1i = Iin
-        gri = grf(xi)
-        f1 = -gri*I0cons*I1i
-        return f1
-      def bc(ya,yb):
-        return np.array([np.abs(yb[0]-I1bc)])
-
-      # Solve bvp and convert to intensity for return
-      y = I1[np.newaxis,:]
-      res = solve_bvp(Fsrs,bc,x,y,tol=1e-10,max_nodes=1e5)
-      I0 *= self.omega0
-      I1 = res.sol(x)[0]
-
-    if plots:
-      self.__srs_plots__(x,n,gr,I0,I1)
-
-    return x,n,I0,I1,gr
-
-  # Extension of BVP solver to include wave mixing from noise sources
-  def wave_mixing_solve_gen(self,x:np.ndarray,n:np.ndarray,Te:np.ndarray, \
-      Ti:Optional[np.ndarray]=None,I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \
-      om1_seed:Optional[float]=None, P0:Optional[float]=None,\
-      plots:Optional[bool]=False,absorption:Optional[bool]=False,\
-      geometry:Optional[str]='planar',laser='lhs'):
-
-    # Check SDL flag true
-    if not self.sdl:
-      raise Exception('Non-SDL wave-mixing solve not implemented.')
-
-    # Ensure all input arrays same length, extrapolate if not
-    points = len(x)
-    cells = points-1
-    xc = np.array([(x[i]+x[i+1])/2 for i in range(cells)])
-    if len(n) == cells:
-      #x = x[1:-1]
-      x = x[1:-1]
-      nf = PchipInterpolator(xc,n)
-      n = nf(x)
-      Tef = PchipInterpolator(xc,Te)
-      Te = Tef(x)
-      if Ti is not None:
-        Tif = PchipInterpolator(xc,Ti)
-        Ti = Tif(x)
-      points = len(x)
-      cells = points - 1
-
-    # Resonance solve for each density point
-    if absorption:
-      grres, om1res, ompe, k0, kappa0, dampingfac = \
-          self.__resonance_range__(n,absorption,Te,Ti)
-    else:
-      grres, om1res, ompe, k0 = self.__resonance_range__(n,absorption,Te)
-    om1res = np.where(om1res > 1e-153, om1res, 1e-154)
-    grres = np.where(om1res > 1e-153, grres, 0.0)
-    grresf = PchipInterpolator(x,grres)
-    om1resf = PchipInterpolator(x,om1res)
-
-    # Check om1_seed input
-    if om1_seed is None:
-      om1_seed = om1res[-1]
-      om1 = copy.deepcopy(om1res)
-      om1f = PchipInterpolator(x,om1)
-      I1_seed = 0.0
-      gr = np.zeros_like(x)
-      grf = PchipInterpolator(x,gr)
-    elif om1_seed <= 0.0:
-      raise Exception('Seed Raman frequency must be positive')
-    else:
-      gr = np.array([self.__gain__(n[i],om1_seed,ompe[i],k0[i],Te[i]) for i in range(len(x))])
-      grf = PchipInterpolator(x,gr)
-      om1 = np.ones_like(x)*om1_seed
-      om1f = PchipInterpolator(x,om1)
-
-    # Initialise kappa1 arrays
-    if absorption:
-      kappa0f = PchipInterpolator(x,kappa0)
-      k1 = np.where(om1 > 1e-153, self.emw_dispersion(om1,target='k'), 0.0)
-      vg1 = np.where(om1 > 1e-153, self.emw_group_velocity(om1,k1),0.0)
-      kappa1 = np.where(om1 > 1e-153, self.collisional_damping(dampingfac,om1)/vg1,0.0)
-      kappa1 = np.sum(kappa1,axis=0)
-      kappa1f = PchipInterpolator(x,kappa1)
-
-    # Geometry dependent surface areas
-    if geometry == 'planar':
-      SA = np.ones_like(x)
-    elif geometry == 'cylindrical':
-      SA = 2*np.pi*x
-    elif geometry == 'spherical':
-      SA = 4*np.pi*x**2
-
-    # Initialise intensity arrays
-    dx = np.diff(x)
-    if P0 is None:
-      P0 = self.I0*SA
-    if I1_noise < 0.0:
-      P1 = P0/1000
-    else:
-      P1 = I1_noise*SA
-    I0 = np.ones_like(x)*P0/SA
-    I1 = np.ones_like(x)*I1_seed
-    I1n = P1/SA
-    I1n = np.where(om1res > 1e-153, I1n, 0.0)
-    I1nf = PchipInterpolator(x,I1n)
-    if laser == 'lhs':
-      dire = 1
-      crng = np.arange(1,len(x))
-      I0bc = I0[0]; I1bc = I1[-1]
-      def bc(ya,yb):
-        return np.array([ya[0]-I0bc,yb[1]-I1bc])
-    else:
-      dire = -1
-      crng = np.arange(len(x)-1)
-      I0bc = I0[-1]; I1bc = I1[0]
-      def bc(ya,yb):
-        return np.array([ya[1]-I1bc,yb[0]-I0bc])
-    om0 = self.omega0
-
-    # ODE evolution functions
-    def Fsrs(xi,Ii):
-
-      # Get PchipInterpolatorolated quantities
-      I0i, I1i = Ii
-      om1m = om1f(xi)
-      om1res = om1resf(xi)
-      gr0 = grresf(xi)
-      gri = grf(xi)
-      I1ni = I1nf(xi)
-
-      # SRS
-      f1 = -dire*I0i*(gri/om1m*I1i+gr0/om1res*I1ni)
-      f2 = -dire*I0i/om0*(gri*I1i+gr0*I1ni)
-
-      # Geometry modification of intensity
-      if geometry == 'planar':
-        dIdr = np.zeros_like(xi)
-      elif geometry == 'cylindrical':
-        dIdr = -1/xi
-      elif geometry == 'spherical':
-        dIdr = -2/xi
-      f1 += I0i*dIdr
-      f2 += I1i*dIdr
-
-      # Absorption
-      if absorption:
-        kappa0 = kappa0f(xi)
-        kappa1 = kappa1f(xi)
-        f1 += -dire*I0i*2*kappa0
-        f2 += dire*I1i*2*kappa1
-
-      return np.vstack((f1,f2))
-
-
-    # Iteratively solve BVP and update frequencies
-    conv = 2*om0; niter = 1
-    #print(x,I0,I1,I0[-1],I1[0])
-    while (conv > om0/100 and niter < 11):
-    #while (niter < 11):
-
-      # Initialisation
-      I0old = copy.deepcopy(I0)
-      I1old = copy.deepcopy(I1)
-
-      # Solve BVP
-      y = np.vstack((I0,I1))
-      res = solve_bvp(Fsrs,bc,x,y)
-      I0 = res.sol(x)[0]
-      I1 = res.sol(x)[1]
-      I0 = np.where(np.isnan(I0),0.0,I0)
-      I1 = np.where(I1 < 0.0,0.0,I1)
-
-      # Separate out contributions
-      noisecont = grresf(x[crng])*I1n[crng]*I0[crng]/om0*np.diff(x)
-      if absorption:
-        abscont = -I1[crng]*2*kappa1[crng]*np.diff(x)
-      else:
-        abscont = 0.0
-      if geometry == 'planar':
-        dIdr = np.zeros_like(x)
-      elif geometry == 'cylindrical':
-        dIdr = -1/x
-      elif geometry == 'spherical':
-        dIdr = -2/x
-      coordcont = I0[crng]*dIdr[crng]*np.diff(x)
-      dI1 = np.zeros_like(I1)
-      dI1 = I1[crng-dire] - I1[crng]
-      dI1 = np.maximum(0.0,dI1-noisecont-abscont-coordcont)
-      if laser == 'lhs':
-        om1[-1] = om1_seed
-        for i in range(points-1):
-          if I1[i] > 1e-153:
-            om1[i] = (np.sum(noisecont[i:]*om1res[1+i:]) \
-                +np.sum(dI1[i:]*om1[1+i:]))/np.sum(noisecont[i:]+dI1[i:])
-            gr[i] = self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i])
-          else:
-            om1[i] = 1e-154
-            gr[i] = 0.0
-      else:
-        om1[0] = om1_seed
-        for i in range(points-1,0,-1):
-          if I1[i] > 1e-153:
-            om1[i] = (np.sum(noisecont[:i]*om1res[:i]) \
-                +np.sum(dI1[:i]*om1[:i]))/np.sum(noisecont[:i]+dI1[:i])
-            gr[i] = self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i])
-          else:
-            om1[i] = om1res[i]
-            gr[i] = 0.0
-      om1mf = PchipInterpolator(x,om1)
-      grf = PchipInterpolator(x,gr)
-      if absorption:
-        kappa0f = PchipInterpolator(x,kappa0)
-        k1 = np.where(om1 > 1e-153, self.emw_dispersion(om1,target='k'), 0.0)
-        vg1 = np.where(om1 > 1e-153, self.emw_group_velocity(om1,k1),0.0)
-        kappa1 = np.where(om1 > 1e-153, self.collisional_damping(dampingfac,om1)/vg1,0.0)
-        kappa1 = np.sum(kappa1,axis=0)
-        kappa1f = PchipInterpolator(x,kappa1)
-      nI = np.count_nonzero(I0 > 1)+np.count_nonzero(I1 > 1)
-      conv = np.sum(np.abs(I0-I0old)+np.abs(I1-I1old))/nI
-      niter += 1
-      print(f'Convergence: {conv:0.2e}')
-
-    if plots:
-      self.__srs_plots__(x,n,gr,I0,I1)
-
-    return x,n,I0,I1,gr,om1
-  
-  def wave_mixing_solve_test(self,I1_noise:float,xrange:tuple, \
-      nrange:tuple,ntype:str,points=101,plots=False,pump_depletion=True,\
-      I1_seed:Optional[float]=0.0,om1_seed:Optional[float]=None):
-
-    # Establish density profile
-    x,n = den_profile(xrange,nrange,ntype,points)
-
-    # Other inputs
-    Te = np.ones_like(n)*self.Te
-    Ti = np.ones_like(n)*self.Ti
-
-    x,n,I0,I1,gr = self.wave_mixing_solve_gen(x=x,n=n,Te=Te,Ti=Ti,I1_noise=I1_noise,\
-        I1_seed=I1_seed,om1_seed=om1_seed,P0=None,plots=plots, \
-        absorption=False,geometry='planar')
-
-    return x,n,I0,I1,gr
 
   # SRS gain function for any density and Raman frequency
   def __gain__(self,ne:float,om1:float,ompe:Optional[float]=None,\
@@ -1583,7 +1192,8 @@ class srs_forest(laser_forest):
 
   # Resonance solve across a density range
   def __resonance_range__(self,n:np.ndarray,absorption:Optional[bool]=False,\
-      Te:Optional[np.ndarray]=None,Ti:Optional[np.ndarray]=None):
+      Te:Optional[np.ndarray]=None,Ti:Optional[np.ndarray]=None,\
+      gradn:Optional[np.ndarray]=None):
     birches = []
     for i in range(len(n)):
       birches.append(copy.deepcopy(self))
@@ -1591,6 +1201,13 @@ class srs_forest(laser_forest):
         birches[i].set_electrons(electrons=True,Te=self.Te,ne=n[i])
       else:
         birches[i].set_electrons(electrons=True,Te=Te[i],ne=n[i])
+      if gradn is not None:
+        alder = copy.deepcopy(birches[i])
+        alder.mode = 'fluid'
+        alder.resonance_solve()
+        alder.I0 = 1
+        alder.get_rosenbluth(gradn=gradn[i])
+        birches[i].rosenbluth = alder.rosenbluth*alder.omega0
       birches[i].resonance_solve()
       if birches[i].omega1 is None:
         birches[i].omega1 = 0.0
@@ -1606,14 +1223,15 @@ class srs_forest(laser_forest):
     grres = np.array([i.gain_coeff for i in birches])
     ompe = np.array([i.ompe for i in birches])
     k0 = np.array([i.k0 for i in birches])
+    roseg = np.array([i.rosenbluth for i in birches])
     if absorption:
       kappa0 = np.array([np.sum(i.kappa0) for i in birches])
       dampingfac = np.zeros((self.nion,len(kappa0)))
       for i,j in enumerate(birches):
         dampingfac[:,i] = j.cdampingx
-      return grres, om1res, ompe, k0, kappa0, damping_fac
+      return grres, om1res, ompe, k0, kappa0, dampingfac, roseg
     else:
-      return grres, om1res, ompe, k0
+      return grres, om1res, ompe, k0, roseg
 
   # Creates copy of parent forest with new raman frequency and reference density
   def __raman_mode__(self,ne,om1,Te:Optional[float]=None):
