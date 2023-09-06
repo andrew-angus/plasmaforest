@@ -703,7 +703,7 @@ class srs_forest(laser_forest):
       I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \
       om1_seed:Optional[float]=None,points:Optional[int]=101, \
       plots:Optional[bool]=False,pump_depletion:Optional[bool]=True, \
-      absorption:Optional[bool]=False):
+      absorption:Optional[bool]=False,reversal=True):
 
     # Check SDL flag true
     if not self.sdl:
@@ -785,7 +785,10 @@ class srs_forest(laser_forest):
         # Noise signal
         if noise:
           #exch = P*(1-np.exp(-grres[i]*I1n[i]*dx))
-          exch = P*(1-np.exp(-grres[i]*I0[i]*1e-9*dx))
+          if reversal:
+            exch = I0[i]*1e-9*(np.exp(grres[i]*I0[i]*dx)-1)
+          else:
+            exch = P*(1-np.exp(-grres[i]*I0[i]*1e-9*dx))
           if exch > 1e-153:
             if pump_depletion:
               exch = np.minimum(exch,P)
@@ -799,8 +802,10 @@ class srs_forest(laser_forest):
             rrays.append(rray(i-1,exch,forest))
 
         # Dominant signal
-        exch = P*(1-np.exp(-gr[i]*(I1old[i]/om1[i])*dx))
-        #exch = (I1old[i]/om1[i])*(np.exp(gr[i]*P*dx)-1)
+        if reversal:
+          exch = I1old[i]/om1[i]*(np.exp(gr[i]*I0[i]*dx)-1)
+        else:
+          exch = P*(1-np.exp(-gr[i]*(I1old[i]/om1[i])*dx))
         if exch > 1e-153:
           if pump_depletion:
             exch = np.minimum(exch,P)
@@ -953,7 +958,7 @@ class srs_forest(laser_forest):
     # Ray trace with SRS modelling
     print('starting ray tracing')
     conv = 2; niter = 0; ra_frac = 1.0
-    while (conv > 0.1 and niter < 50) or niter < 20:
+    while (conv > 0.1 and niter < 50) or niter < 10:
       # Initialisation
       nnzero = 0
       I0old = copy.deepcopy(I0)
@@ -986,6 +991,7 @@ class srs_forest(laser_forest):
         if noise:
           ramamp = np.minimum(grres[l.cid]*I0[l.cid]*dr[l.cid]\
               ,roseg[l.cid]*I0[l.cid]) # GP replaces this
+          ramamp = np.minimum(ramamp,np.log(1e9*om1res[l.cid]/self.omega0))
           if absorption:
             forest = self.__raman_mode__(n[l.cid],om1res[l.cid])
             forest.cdampingx = np.sum(dampingfac[:,l.cid])
@@ -997,15 +1003,15 @@ class srs_forest(laser_forest):
           #cthresh1 = np.log(1.01)
           cthresh1 = 0.0
           if ramamp > np.maximum(ramabs,cthresh1):
-            #exch = P*(1-np.exp(-grres[i]*I1n[i]*dr[l.cid]))
-            exch = Wcell*(1-np.exp(-grres[l.cid]*I0[l.cid]*1e-9*dr[l.cid]))
+            #exch = Wcell*(1-np.exp(-grres[l.cid]*I0[l.cid]*1e-9*dr[l.cid]))
+            exch = I0[l.cid]*1e-9*(np.exp(ramamp)-1)
             pact = exch/drV[l.cid]
             if pump_depletion:
               exchl = np.minimum(pact*self.omega0,l.pwr)
               l.pwr = np.maximum(0.0,l.pwr-exchl)
               Wcell = l.pwr*lfac
             if absorption:
-              exch *= np.exp(-ramabs)
+              pact *= np.exp(-ramabs)
             rcid = l.cid-l.dire
             forest = self.__raman_mode__(n[rcid],om1res[l.cid],Te[rcid])
             rrays.append(rray(rcid,pact*om1res[l.cid],-l.dire,forest))
@@ -1013,6 +1019,7 @@ class srs_forest(laser_forest):
         # Dominant signal
         ramamp = np.minimum(gr[l.cid]*I0[l.cid]*dr[l.cid],\
             roseg[l.cid]*I0[l.cid])
+        ramamp = np.minimum(ramamp,np.log(I0[l.cid]/I1old[l.cid]))
         if absorption:
           forest = self.__raman_mode__(n[l.cid],om1[l.cid])
           forest.cdampingx = np.sum(dampingfac[:,l.cid])
@@ -1021,16 +1028,17 @@ class srs_forest(laser_forest):
         else:
           ramabs = 0.0
         # Min amplification threshold
-        cthresh2 = np.log(1.01)
+        #cthresh2 = np.log(1.01)
         cthresh2 = 0.0
         if ramamp > np.maximum(ramabs,cthresh2):
-          exch = Wcell*(1-np.exp(-gr[l.cid]*I1old[l.cid]*dr[l.cid]))
+          #exch = Wcell*(1-np.exp(-gr[l.cid]*I1old[l.cid]*dr[l.cid]))
+          exch = I1old[l.cid]*(np.exp(ramamp)-1)
           pact = exch/drV[l.cid]
           if pump_depletion:
             exchl = np.minimum(pact*self.omega0,l.pwr)
             l.pwr = np.maximum(0.0,l.pwr-exchl)
           if absorption:
-            exch *= np.exp(-ramabs)
+            pact *= np.exp(-ramabs)
           rcid = l.cid-l.dire
           forest = self.__raman_mode__(n[rcid],om1[l.cid],Te[rcid])
           rrays.append(rray(rcid,pact*om1[l.cid],-l.dire,forest))
