@@ -154,7 +154,7 @@ class srs_forest(laser_forest):
           self.get_ldamping2()
         else:
           if undamped:
-            disbnd = 0.75465*self.ompe/self.vthe
+            disbnd = 0.7546*self.ompe/self.vthe
             if self.k0 < disbnd:
               kbnd = np.minimum(2*self.k0,disbnd)
               try:
@@ -741,7 +741,7 @@ class srs_forest(laser_forest):
     # Initialise cell arrays and seed powers
     I0 = np.zeros_like(x)
     I1 = np.zeros_like(x)
-    I1n = I1_noise/om1res
+    #I1n = I1_noise/om1res
     om0 = self.omega0
     om1 = np.ones_like(xc)
     gr = np.zeros_like(xc)
@@ -869,14 +869,21 @@ class srs_forest(laser_forest):
 
   # Ray trace solver with more flexibility in coordinates, temp and den profiles
   def ray_trace_solve2(self,x:np.ndarray,n:np.ndarray,Te:np.ndarray, \
-      Ti:Optional[np.ndarray]=None,I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \
+      Ti:Optional[np.ndarray]=None,noise:Optional[bool]=True,I1_seed:Optional[float]=0.0, \
       om1_seed:Optional[float]=None, P0:Optional[float]=None,\
       plots:Optional[bool]=False,pump_depletion:Optional[bool]=True, \
-      absorption:Optional[bool]=False,geometry:Optional[str]='planar'):
+      absorption:Optional[bool]=False,geometry:Optional[str]='planar',flip_launch=False,\
+      addnoise=True):
 
     # Check SDL flag true
     if not self.sdl:
       raise Exception('bvp_solve only works in strong damping limit; self.sdl must be True.')
+
+    if flip_launch:
+      x = np.flip(x)
+      n = np.flip(n)
+      Te = np.flip(Te)
+      Ti = np.flip(Ti)
 
     # Cell counts and centers
     points = len(x)
@@ -884,13 +891,14 @@ class srs_forest(laser_forest):
     xc = np.array([(x[i]+x[i+1])/2 for i in range(cells)])
 
     # Density gradient
-    nlog = np.log(n)
-    fwd = (nlog[1:]-nlog[:-1])/(xc[1:]-xc[:-1])
+    #nlog = np.log(n)
+    #fwd = (nlog[1:]-nlog[:-1])/(xc[1:]-xc[:-1])
+    fwd = (n[1:]-n[:-1])/(xc[1:]-xc[:-1])
     gradn = np.zeros_like(n)
     gradn[0] = fwd[0]
     gradn[-1] = fwd[-1]
     gradn[1:-1] = (fwd[:-1]+fwd[1:])/2
-    gradn *= n
+    #gradn *= n
     
     # Resonance range
     if absorption:
@@ -910,36 +918,32 @@ class srs_forest(laser_forest):
       om1_seed = om1res[-1]
       seed = False
 
-    if I1_noise < 1e-153:
-      noise = False
-    else:
-      noise = True
-
     # Cell volumes 
     dr = np.abs(np.diff(x))
     if geometry == 'planar':
       drV = np.ones_like(dr)
     elif geometry == 'cylindrical':
-      V = np.array([np.pi*(x[i]**2-x[i+1]**2) for i in range(points-1)])
+      V = np.array([np.pi*(np.abs(np.abs(x[i])**2-np.abs(x[i+1])**2)) for i in range(points-1)])
       drV = dr/V
     elif geometry == 'spherical':
-      V = np.array([4/3*np.pi*(x[i]**3-x[i+1]**3) for i in range(points-1)])
+      V = np.array([4/3*np.pi*(np.abs(x[i]**3-x[i+1]**3)) for i in range(points-1)])
       drV = dr/V
     
     # Initialise cell arrays and seed powers
-    I0 = np.zeros_like(x)
-    I1 = np.zeros_like(x)
+    I0 = np.zeros_like(xc)
+    I1 = np.zeros_like(xc)
     om1res = np.where(om1res > 1e-153, om1res, 0.0)
     om0 = self.omega0
     om1 = np.ones_like(xc)
     gr = np.zeros_like(xc)
     if P0 is None:
       P0 = self.I0
-    if I1_noise < 1e-153:
-      P1n = P0*1e-9
-    else:
-      P1n = I1_noise/drV
-    I1n = np.where(om1res > 1e-153, P1n*drV/np.maximum(om1res,1e-153), 0.0)
+    grres = np.where(roseg*P0*drV/self.omega0 < 11, 0.0, grres)
+    #if I1_noise < 1e-153:
+    #  P1n = P0*1e-9
+    #else:
+    #  P1n = I1_noise/drV
+    #I1n = np.where(om1res > 1e-153, P1n*drV/np.maximum(om1res,1e-153), 0.0)
 
     # Laser ray class
     class lray:
@@ -958,7 +962,7 @@ class srs_forest(laser_forest):
     # Ray trace with SRS modelling
     print('starting ray tracing')
     conv = 2; niter = 0; ra_frac = 1.0
-    while (conv > 0.1 and niter < 50) or niter < 10:
+    while (conv > 0.1 and niter < 100) or niter < 10:
       # Initialisation
       nnzero = 0
       I0old = copy.deepcopy(I0)
@@ -973,7 +977,10 @@ class srs_forest(laser_forest):
         rrays.append(rray(cells-1,I1_seed/drV[-1],-1,forest))
       
       # Launch laser ray
-      l = lray(0,P0,1)
+      if flip_launch:
+        l = lray(cells-1,P0,-1)
+      else:
+        l = lray(0,P0,1)
       while (l.cid < cells and l.cid >= 0):
 
         # Cell update
@@ -983,7 +990,8 @@ class srs_forest(laser_forest):
 
         # IB
         if absorption:
-          l.pwr *= np.exp(-2*kappa0[l.cid]*dr[l.cid])
+          #l.pwr *= np.exp(-2*kappa0[l.cid]*dr[l.cid])
+          l.pwr = l.pwr-l.pwr*(1-np.exp(-2*kappa0[l.cid]*dr[l.cid]))
           Wcell = l.pwr*lfac
 
         # SRS
@@ -996,7 +1004,7 @@ class srs_forest(laser_forest):
             forest = self.__raman_mode__(n[l.cid],om1res[l.cid])
             forest.cdampingx = np.sum(dampingfac[:,l.cid])
             forest.get_kappa1()
-            ramabs = 2*forest.kappa1*dr[l.cid]
+            ramabs = 2*np.sum(forest.kappa1)*dr[l.cid]
           else:
             ramabs = 0.0
           # Min amplification threshold
@@ -1013,8 +1021,9 @@ class srs_forest(laser_forest):
             if absorption:
               pact *= np.exp(-ramabs)
             rcid = l.cid-l.dire
-            forest = self.__raman_mode__(n[rcid],om1res[l.cid],Te[rcid])
-            rrays.append(rray(rcid,pact*om1res[l.cid],-l.dire,forest))
+            if rcid < cells:
+              forest = self.__raman_mode__(n[rcid],om1res[l.cid],Te[rcid])
+              rrays.append(rray(rcid,pact*om1res[l.cid],-l.dire,forest))
 
         # Dominant signal
         ramamp = np.minimum(gr[l.cid]*I0[l.cid]*dr[l.cid],\
@@ -1031,7 +1040,6 @@ class srs_forest(laser_forest):
         #cthresh2 = np.log(1.01)
         cthresh2 = 0.0
         if ramamp > np.maximum(ramabs,cthresh2):
-          #exch = Wcell*(1-np.exp(-gr[l.cid]*I1old[l.cid]*dr[l.cid]))
           exch = I1old[l.cid]*(np.exp(ramamp)-1)
           pact = exch/drV[l.cid]
           if pump_depletion:
@@ -1040,8 +1048,9 @@ class srs_forest(laser_forest):
           if absorption:
             pact *= np.exp(-ramabs)
           rcid = l.cid-l.dire
-          forest = self.__raman_mode__(n[rcid],om1[l.cid],Te[rcid])
-          rrays.append(rray(rcid,pact*om1[l.cid],-l.dire,forest))
+          if rcid < cells:
+            forest = self.__raman_mode__(n[rcid],om1[l.cid],Te[rcid])
+            rrays.append(rray(rcid,pact*om1[l.cid],-l.dire,forest))
 
         if l.pwr < 1e-153:
           break
@@ -1102,22 +1111,19 @@ class srs_forest(laser_forest):
       conv = (np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old-I1)))/nnzero
       niter += 1
       print(f'Iteration: {niter}; Convergence: {conv}')
+      print('')
 
     # Convert to intensity from wave action
     I0 *= self.omega0
-    I1[:-1] *= om1 
-    I1 += I1_noise
-
-    # Get Raman intensity array in proper order
-    #tmp = I1[-1]
-    #I1[1:] = I1[:-1]
-    #I1[0] = tmp
+    I1 *= om1 
+    if addnoise:
+      I1 += I0*1e-9
 
     # Optionally plot
-    if plots:
-      self.__srs_plots__(x,n,gr,I0,I1,centred=True,xc=xc)
+    #if plots:
+    #  self.__srs_plots__(x,n,gr,I0,I1,centred=True,xc=xc)
 
-    return x,xc,n,I0[:-1],I1[:-1],gr,om1
+    return x,xc,n,I0,I1,gr,om1,grres,roseg
 
   def ray_trace_solve3(self,xrange:tuple,nrange:tuple,ntype:str, \
       I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \

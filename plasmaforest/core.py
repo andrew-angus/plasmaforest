@@ -201,13 +201,13 @@ class forest:
         else:
           raise Exception(\
               "Error: coulomb_log_ei calc does not fit any NRL formulary cases") 
-      self.coulomb_log_ei = cl
+      self.coulomb_log_ei = np.maximum(cl,1.0)
 
     # Electron-electron
     elif species == 'ee':
       ne,Te = nrl
-      self.coulomb_log_ee = 23.5-np.log(np.sqrt(ne)*pwr(Te,-5/4))\
-          -np.sqrt(1e-5+sqr(np.log(Te)-2)/16)
+      self.coulomb_log_ee = np.maximum(23.5-np.log(np.sqrt(ne)*pwr(Te,-5/4))\
+          -np.sqrt(1e-5+sqr(np.log(Te)-2)/16),1.0)
     # Ion-ion
     elif species == 'ii':
       ne,Te,Ti,me,mi,mui,ni = nrl
@@ -216,9 +216,9 @@ class forest:
       for i in range(self.nion):
         for j in range(i+1):
           vid = sym_mtx_to_vec(i,j,self.nion) 
-          self.coulomb_log_ii[vid] = 23-np.log(Z[i]*Z[j]*(mui[i]+mui[j])\
+          self.coulomb_log_ii[vid] = np.maximum(23-np.log(Z[i]*Z[j]*(mui[i]+mui[j])\
               /(mui[i]*Ti[j]+mui[j]*Ti[i])*np.sqrt(ni[i]*sqr(Z[i])\
-              /Ti[i]+ni[j]*sqr(Z[j])/Ti[j]))
+              /Ti[i]+ni[j]*sqr(Z[j])/Ti[j])),1.0)
 
   # Calculate collision frequency according to NRL formulary
   def get_collision_freq(self,species:str):

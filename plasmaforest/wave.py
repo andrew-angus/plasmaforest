@@ -170,7 +170,8 @@ class wave_forest(forest):
       self.get_coulomb_log(species='ei')
     if self.ompe is None:
       self.get_omp(species='e')
-    return prefac*(self.coulomb_log_ei+np.log(self.ompe/omega))/sqr(omega)
+    return prefac*np.maximum(self.coulomb_log_ei+np.log(self.ompe/omega),1.0) \
+        /sqr(omega)
 
   def epw_landau_damping(self,omega:floats,k:floats,\
       mode:str,relativistic:Optional[bool]=False) -> floats:
@@ -312,7 +313,7 @@ class wave_forest(forest):
       zeta0 = np.maximum(om/(arg*self.vthe),1.503)
       K0 = np.sqrt(np.real(dZfun(zeta0)))
       Kf = arg*therm
-      if Kf > 0.754651:
+      if Kf > 0.75465:
         raise Exception(\
           'No omega solution for given k by undamped kinetic dispersion')
       zeta = self.zetar_int(zeta0,K0,Kf)
