@@ -898,6 +898,7 @@ class srs_forest(laser_forest):
     gradn[0] = fwd[0]
     gradn[-1] = fwd[-1]
     gradn[1:-1] = (fwd[:-1]+fwd[1:])/2
+    gradn = -gradn
     #gradn *= n
     
     # Resonance range
@@ -906,6 +907,23 @@ class srs_forest(laser_forest):
           self.__resonance_range__(n,absorption,Te,Ti,gradn=gradn)
     else:
       grres, om1res, ompe, k0, roseg = self.__resonance_range__(n,absorption,Te,gradn=gradn)
+
+    
+    #print(om1res)
+    #plt.plot(xc,om1res)
+    #plt.show()
+    #plt.plot(xc,om1res)
+    #plt.show()
+    #plt.plot(xc,n)
+    #plt.show()
+
+    # Binning arrays for frequency spectrum
+    maxom1 = np.max(om1res)
+    minom1 = np.min(om1res)
+    nbins = cells // 2
+    binbnds = np.linspace(minom1,maxom1,nbins+1)
+    pwrbin = np.zeros(nbins)
+    freqbin = (binbnds[1:]+binbnds[:-1])/2
 
     # Check seed inputs
     if I1_seed > 1e-10 and om1_seed is None:
@@ -938,7 +956,7 @@ class srs_forest(laser_forest):
     gr = np.zeros_like(xc)
     if P0 is None:
       P0 = self.I0
-    grres = np.where(roseg*P0*drV/self.omega0 < 11, 0.0, grres)
+    grres = np.where(roseg*P0*drV/self.omega0 < np.log(1), 0.0, grres)
     #if I1_noise < 1e-153:
     #  P1n = P0*1e-9
     #else:
@@ -961,8 +979,8 @@ class srs_forest(laser_forest):
 
     # Ray trace with SRS modelling
     print('starting ray tracing')
-    conv = 2; niter = 0; ra_frac = 1.0
-    while (conv > 0.1 and niter < 100) or niter < 10:
+    conv = 2; niter = 0; ra_frac = 1.0; ema = 0.0
+    while (conv > 1 and niter < 30):
       # Initialisation
       nnzero = 0
       I0old = copy.deepcopy(I0)
@@ -996,7 +1014,7 @@ class srs_forest(laser_forest):
 
         # SRS
         # Noise signal
-        if noise:
+        if noise and grres[l.cid] > 1e-153:
           ramamp = np.minimum(grres[l.cid]*I0[l.cid]*dr[l.cid]\
               ,roseg[l.cid]*I0[l.cid]) # GP replaces this
           ramamp = np.minimum(ramamp,np.log(1e9*om1res[l.cid]/self.omega0))
@@ -1008,9 +1026,9 @@ class srs_forest(laser_forest):
           else:
             ramabs = 0.0
           # Min amplification threshold
-          #cthresh1 = np.log(1.01)
-          cthresh1 = 0.0
-          if ramamp > np.maximum(ramabs,cthresh1):
+          #cthresh = np.log(1e5)
+          cthresh = 0.0
+          if ramamp > np.maximum(ramabs,cthresh):
             #exch = Wcell*(1-np.exp(-grres[l.cid]*I0[l.cid]*1e-9*dr[l.cid]))
             exch = I0[l.cid]*1e-9*(np.exp(ramamp)-1)
             pact = exch/drV[l.cid]
@@ -1026,31 +1044,33 @@ class srs_forest(laser_forest):
               rrays.append(rray(rcid,pact*om1res[l.cid],-l.dire,forest))
 
         # Dominant signal
-        ramamp = np.minimum(gr[l.cid]*I0[l.cid]*dr[l.cid],\
-            roseg[l.cid]*I0[l.cid])
-        ramamp = np.minimum(ramamp,np.log(I0[l.cid]/I1old[l.cid]))
-        if absorption:
-          forest = self.__raman_mode__(n[l.cid],om1[l.cid])
-          forest.cdampingx = np.sum(dampingfac[:,l.cid])
-          forest.get_kappa1()
-          ramabs = 2*forest.kappa1*dr[l.cid]
-        else:
-          ramabs = 0.0
-        # Min amplification threshold
-        #cthresh2 = np.log(1.01)
-        cthresh2 = 0.0
-        if ramamp > np.maximum(ramabs,cthresh2):
-          exch = I1old[l.cid]*(np.exp(ramamp)-1)
-          pact = exch/drV[l.cid]
-          if pump_depletion:
-            exchl = np.minimum(pact*self.omega0,l.pwr)
-            l.pwr = np.maximum(0.0,l.pwr-exchl)
+        if gr[l.cid] > 1e-153:
+          ramamp = np.minimum(gr[l.cid]*I0[l.cid]*dr[l.cid],\
+              roseg[l.cid]*I0[l.cid])
+          ramamp = np.minimum(ramamp,np.log(I0[l.cid]/I1old[l.cid]))
+          ramamp = np.maximum(ramamp, 0.0)
           if absorption:
-            pact *= np.exp(-ramabs)
-          rcid = l.cid-l.dire
-          if rcid < cells:
-            forest = self.__raman_mode__(n[rcid],om1[l.cid],Te[rcid])
-            rrays.append(rray(rcid,pact*om1[l.cid],-l.dire,forest))
+            forest = self.__raman_mode__(n[l.cid],om1[l.cid])
+            forest.cdampingx = np.sum(dampingfac[:,l.cid])
+            forest.get_kappa1()
+            ramabs = 2*forest.kappa1*dr[l.cid]
+          else:
+            ramabs = 0.0
+          # Min amplification threshold
+          #cthresh = np.log(10)
+          cthresh = 0.0
+          if ramamp > np.maximum(ramabs,cthresh):
+            exch = I1old[l.cid]*(np.exp(ramamp)-1)
+            pact = exch/drV[l.cid]
+            if pump_depletion:
+              exchl = np.minimum(pact*self.omega0,l.pwr)
+              l.pwr = np.maximum(0.0,l.pwr-exchl)
+            if absorption:
+              pact *= np.exp(-ramabs)
+            rcid = l.cid-l.dire
+            if rcid < cells:
+              forest = self.__raman_mode__(n[rcid],om1[l.cid],Te[rcid])
+              rrays.append(rray(rcid,pact*om1[l.cid],-l.dire,forest))
 
         if l.pwr < 1e-153:
           break
@@ -1090,8 +1110,11 @@ class srs_forest(laser_forest):
           # Propagate
           r.cid += r.dire
           
-        # Update exit value
-        #I1[-1] += r.pwr*drV[-1]
+        # Bin ray
+        for i in range(nbins):
+          if r.forest.omega1 < binbnds[i+1]:
+            pwrbin[i] += r.pwr
+            break
 
       # Update cell arrays for next iteration
       for i in range(cells):
@@ -1109,8 +1132,15 @@ class srs_forest(laser_forest):
 
       # Calculate convergence condition
       conv = (np.sum(np.abs(I0old-I0))+np.sum(np.abs(I1old-I1)))/nnzero
+      emaold = ema
+      ema = 0.4*conv + 0.6*ema
       niter += 1
-      print(f'Iteration: {niter}; Convergence: {conv}')
+      print(f'Iteration: {niter}; Convergence: {conv}; EMA {ema}')
+      #plt.semilogy(xc,I1old,label='old')
+      #plt.semilogy(xc,I1,label='old')
+      #plt.show()
+      if np.abs(emaold-ema) < 1:
+        break
       print('')
 
     # Convert to intensity from wave action
@@ -1123,7 +1153,7 @@ class srs_forest(laser_forest):
     #if plots:
     #  self.__srs_plots__(x,n,gr,I0,I1,centred=True,xc=xc)
 
-    return x,xc,n,I0,I1,gr,om1,grres,roseg
+    return x,xc,n,I0,I1,gr,om1,grres,roseg,freqbin,pwrbin
 
   def ray_trace_solve3(self,xrange:tuple,nrange:tuple,ntype:str, \
       I1_noise:Optional[float]=0.0,I1_seed:Optional[float]=0.0, \
@@ -1218,8 +1248,8 @@ class srs_forest(laser_forest):
       if gradn is not None:
         alder = copy.deepcopy(birches[i])
         alder.mode = 'fluid'
+        alder.set_intensity(1)
         alder.resonance_solve()
-        alder.I0 = 1
         alder.get_rosenbluth(gradn=gradn[i])
         birches[i].rosenbluth = alder.rosenbluth*alder.omega0
       birches[i].resonance_solve()
