@@ -331,6 +331,12 @@ class srs_forest(laser_forest):
       self.resonance_solve()
     self.nc1 = self.emw_nc(self.omega1)
 
+  # EPW critical density
+  def get_nc2(self):
+    if self.omega1 is None:
+      self.resonance_solve()
+    self.nc2 = self.emw_nc(self.omega2)
+
   # Raman spatial damping
   def get_kappa1(self):
     if self.vg1 is None:
@@ -600,7 +606,7 @@ class srs_forest(laser_forest):
   def bvp_solve(self,I1_seed:float,xrange:tuple,nrange:tuple,Trange:tuple,\
       ntype:str,points=1001,\
       plots=False,pump_depletion=True,errhndl=True,force_kinetic=False,\
-      cutoff=True,cdamping=False):
+      cutoff=True,cdamping=True,emwdamping=False):
 
     # Check SDL flag true
     if not self.sdl:
@@ -648,7 +654,7 @@ class srs_forest(laser_forest):
 
     if pump_depletion:
       # ODE evolution functions
-      if cdamping:
+      if cdamping and emwdamping:
         def Fsrs(xi,Iin):
           I0i, I1i = Iin
           gri = grf(xi)
@@ -889,6 +895,20 @@ class srs_forest(laser_forest):
     points = len(x)
     cells = len(n)
     xc = np.array([(x[i]+x[i+1])/2 for i in range(cells)])
+
+    # Upscale by 2
+    """
+    nf = PchipInterpolator(xc,n)
+    Tef = PchipInterpolator(xc,Te)
+    Tif = PchipInterpolator(xc,Ti)
+    x = np.linspace(x[0],x[-1],200)
+    points = len(x)
+    cells = points - 1
+    xc = np.array([(x[i]+x[i+1])/2 for i in range(cells)])
+    n = nf(xc)
+    Te = Tef(xc)
+    Ti = Tif(xc)
+    """
 
     # Density gradient
     #nlog = np.log(n)
