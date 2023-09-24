@@ -792,9 +792,10 @@ class srs_forest(laser_forest):
         if noise:
           #exch = P*(1-np.exp(-grres[i]*I1n[i]*dx))
           if reversal:
-            exch = I0[i]*1e-9*(np.exp(grres[i]*I0[i]*dx)-1)
+            exch = self.omega0/om1res[i]*I0[i]*1e-9*(np.exp(grres[i]*I0[i]*dx)-1)
           else:
-            exch = P*(1-np.exp(-grres[i]*I0[i]*1e-9*dx))
+            exch = P*(1-np.exp(-grres[i]*self.omega0/om1res[i]*\
+                I0[i]*1e-9*dx))
           if exch > 1e-153:
             if pump_depletion:
               exch = np.minimum(exch,P)
@@ -1050,7 +1051,7 @@ class srs_forest(laser_forest):
           cthresh = 0.0
           if ramamp > np.maximum(ramabs,cthresh):
             #exch = Wcell*(1-np.exp(-grres[l.cid]*I0[l.cid]*1e-9*dr[l.cid]))
-            exch = I0[l.cid]*1e-9*(np.exp(ramamp)-1)
+            exch = self.omega0/om1res[l.cid]*I0[l.cid]*1e-9*(np.exp(ramamp)-1)
             pact = exch/drV[l.cid]
             if pump_depletion:
               exchl = np.minimum(pact*self.omega0,l.pwr)
@@ -1265,14 +1266,14 @@ class srs_forest(laser_forest):
         birches[i].set_electrons(electrons=True,Te=self.Te,ne=n[i])
       else:
         birches[i].set_electrons(electrons=True,Te=Te[i],ne=n[i])
+      birches[i].resonance_solve()
       if gradn is not None:
         alder = copy.deepcopy(birches[i])
-        alder.mode = 'fluid'
+        #alder.mode = 'fluid'
         alder.set_intensity(1)
-        alder.resonance_solve()
+        #alder.resonance_solve()
         alder.get_rosenbluth(gradn=gradn[i])
         birches[i].rosenbluth = alder.rosenbluth*alder.omega0
-      birches[i].resonance_solve()
       if birches[i].omega1 is None:
         birches[i].omega1 = 0.0
         birches[i].gain_coeff = 0.0
