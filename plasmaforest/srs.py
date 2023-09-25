@@ -880,7 +880,7 @@ class srs_forest(laser_forest):
       om1_seed:Optional[float]=None, P0:Optional[float]=None,\
       plots:Optional[bool]=False,pump_depletion:Optional[bool]=True, \
       absorption:Optional[bool]=False,geometry:Optional[str]='planar',flip_launch=False,\
-      addnoise=True):
+      addnoise=True,rosegin=None):
 
     # Check SDL flag true
     if not self.sdl:
@@ -891,6 +891,7 @@ class srs_forest(laser_forest):
       n = np.flip(n)
       Te = np.flip(Te)
       Ti = np.flip(Ti)
+      rosegin= np.flip(rosegin)
 
     # Cell counts and centers
     points = len(x)
@@ -941,7 +942,7 @@ class srs_forest(laser_forest):
     # Binning arrays for frequency spectrum
     maxom1 = np.max(om1res)
     minom1 = np.min(om1res)
-    nbins = cells // 2
+    nbins = cells // 3
     binbnds = np.linspace(minom1,maxom1,nbins+1)
     pwrbin = np.zeros(nbins)
     freqbin = (binbnds[1:]+binbnds[:-1])/2
@@ -975,9 +976,16 @@ class srs_forest(laser_forest):
     om0 = self.omega0
     om1 = np.ones_like(xc)
     gr = np.zeros_like(xc)
+    #roseg2 = np.zeros_like(xc)
     if P0 is None:
       P0 = self.I0
-    grres = np.where(roseg*P0*drV/self.omega0 < np.log(1), 0.0, grres)
+    roseg2 = np.zeros_like(xc)
+    grres = np.where(roseg*P0*drV/self.omega0 < 1e-153, 0.0, grres)
+    for i in range(len(xc)):
+      if grres[i] > 1e-153:
+        roseg[i] = self.__rosenbluth__(n[i],om1res[i],gradn[i],ompe[i],k0[i],Te[i])
+    print(rosegin)
+    roseg = rosegin
     #if I1_noise < 1e-153:
     #  P1n = P0*1e-9
     #else:
@@ -1001,7 +1009,7 @@ class srs_forest(laser_forest):
     # Ray trace with SRS modelling
     print('starting ray tracing')
     conv = 2; niter = 0; ra_frac = 1.0; ema = 0.0
-    while (conv > 1 and niter < 30):
+    while (conv > 1 and niter < 10):
       # Initialisation
       nnzero = 0
       I0old = copy.deepcopy(I0)
@@ -1144,7 +1152,9 @@ class srs_forest(laser_forest):
         if I1[i] > 1e-153:
           nnzero += 1
           om1[i] /= I1[i]
+          #gr[i],roseg2[i] = self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i],rosenbluth=True)
           gr[i] = self.__gain__(n[i],om1[i],ompe[i],k0[i],Te[i])
+          roseg2[i] = self.__rosenbluth__(n[i],om1[i],gradn[i],ompe[i],k0[i],Te[i])
           I1[i] /= om1[i]
         else:
           om1[i] = 0.0
@@ -1158,10 +1168,12 @@ class srs_forest(laser_forest):
       niter += 1
       print(f'Iteration: {niter}; Convergence: {conv}; EMA {ema}')
       #plt.semilogy(xc,I1old,label='old')
-      #plt.semilogy(xc,I1,label='old')
-      #plt.show()
-      if np.abs(emaold-ema) < 1:
-        break
+      plt.semilogy(xc*1e3,I0*self.omega0,label='I0')
+      plt.semilogy(xc*1e3,I1*om1,label='I1')
+      plt.legend()
+      plt.show()
+      #if np.abs(emaold-ema) < 1:
+      #  break
       print('')
 
     # Convert to intensity from wave action
@@ -1214,6 +1226,25 @@ class srs_forest(laser_forest):
       birch.set_wavenumbers(k1,birch.k0-k1)
       birch.get_gain_coeff(force_kinetic=force_kinetic,collisional=collisional)
     return birch.gain_coeff
+
+  # SRS gain function for any density and Raman frequency
+  def __rosenbluth__(self,ne:float,om1:float,gradn:float,ompe:Optional[float]=None,\
+      k0:Optional[float]=None,Te:Optional[float]=None,\
+      force_kinetic:Optional[bool]=False):
+    birch = self.__raman_mode__(ne,om1,Te)
+    if k0 is None:
+      birch.get_k0()
+    else:
+      birch.k0 = k0
+    if ompe is not None:
+      birch.ompe = ompe
+    if om1 < birch.ompe:
+      birch.gain_coeff = 0.0
+    else:
+      k1 = -birch.emw_dispersion(om1,target='k')
+      birch.set_wavenumbers(k1,birch.k0-k1)
+      birch.get_rosenbluth(gradn=gradn,force_kinetic=force_kinetic)
+    return birch.rosenbluth/birch.I0*birch.omega0
 
   # Collisional damping for each mode
   def __cdamping__(self,ne:float,om1:float,ompe:Optional[float]=None,\
@@ -1269,9 +1300,9 @@ class srs_forest(laser_forest):
       birches[i].resonance_solve()
       if gradn is not None:
         alder = copy.deepcopy(birches[i])
-        #alder.mode = 'fluid'
+        alder.mode = 'fluid'
         alder.set_intensity(1)
-        #alder.resonance_solve()
+        alder.resonance_solve()
         alder.get_rosenbluth(gradn=gradn[i])
         birches[i].rosenbluth = alder.rosenbluth*alder.omega0
       if birches[i].omega1 is None:
